@@ -56,6 +56,8 @@ def send_telegram(text):
         'text'       : text,
         'parse_mode' : 'HTML'
     }).encode()
+    print(f"Sending to chat_id: {CHAT_ID}")
+    print(f"Token prefix: {TELEGRAM_TOKEN[:10]}...")
     for attempt in range(3):
         try:
             req = urllib.request.Request(
@@ -64,9 +66,11 @@ def send_telegram(text):
             )
             with urllib.request.urlopen(req, timeout=10) as r:
                 result = json.loads(r.read())
+                print(f"Telegram response: {result}")
                 if result.get('ok'):
                     return True
         except Exception as e:
+            print(f"Attempt {attempt+1} failed: {e}")
             if attempt < 2:
                 time.sleep(2)
     return False
