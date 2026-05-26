@@ -1,0 +1,132 @@
+name: SwingBot Scanner
+
+on:
+  schedule:
+    # ── EDT Schedule (UTC-4): March second Sunday → November first Sunday ──────
+    # Heartbeat — 9:50 AM EDT = 13:50 UTC
+    - cron: '50 13 * 3,4,5,6,7,8,9,10 1-5'
+    # Scans — 10:05 to 15:05 EDT
+    - cron: '5 14 * 3,4,5,6,7,8,9,10 1-5'
+    - cron: '5 15 * 3,4,5,6,7,8,9,10 1-5'
+    - cron: '5 16 * 3,4,5,6,7,8,9,10 1-5'
+    - cron: '5 17 * 3,4,5,6,7,8,9,10 1-5'
+    - cron: '5 18 * 3,4,5,6,7,8,9,10 1-5'
+    - cron: '5 19 * 3,4,5,6,7,8,9,10 1-5'
+    # Recap — 3:30 PM EDT = 19:30 UTC
+    - cron: '30 19 * 3,4,5,6,7,8,9,10 1-5'
+
+    # ── EST Schedule (UTC-5): November first Sunday → March second Sunday ──────
+    # Heartbeat — 9:50 AM EST = 14:50 UTC
+    - cron: '50 14 * 1,2,11,12 1-5'
+    # Scans — 10:05 to 15:05 EST
+    - cron: '5 15 * 1,2,11,12 1-5'
+    - cron: '5 16 * 1,2,11,12 1-5'
+    - cron: '5 17 * 1,2,11,12 1-5'
+    - cron: '5 18 * 1,2,11,12 1-5'
+    - cron: '5 19 * 1,2,11,12 1-5'
+    - cron: '5 20 * 1,2,11,12 1-5'
+    # Recap — 3:30 PM EST = 20:30 UTC
+    - cron: '30 20 * 1,2,11,12 1-5'
+
+    # ── Monthly validation — 1st of month 9:00 AM EDT = 13:00 UTC ────────────
+    - cron: '0 13 1 3,4,5,6,7,8,9,10 *'
+    # Monthly validation — 1st of month 9:00 AM EST = 14:00 UTC
+    - cron: '0 14 1 1,2,11,12 *'
+
+    # ── DST Spring reminder — 2nd Sunday of March 8:00 PM ────────────────────
+    - cron: '0 0 8-14 3 0'
+    # ── DST Fall reminder — 1st Sunday of November 8:00 PM ───────────────────
+    - cron: '0 1 1-7 11 0'
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'scan'
+        type: choice
+        options:
+          - scan
+          - heartbeat
+          - recap
+          - monthly
+          - dst_reminder
+          - test
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install yfinance==0.2.66 pandas numpy pytz
+
+      - name: Determine run mode
+        id: mode
+        run: |
+          HOUR=$(date -u +%H)
+          MIN=$(date -u +%M)
+          DAY=$(date -u +%d)
+          MONTH=$(date -u +%m)
+          DOW=$(date -u +%u)
+
+          # Manual trigger
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Monthly validation
+          if [ "$DAY" = "01" ] && { [ "$HOUR" = "13" ] || [ "$HOUR" = "14" ]; } && [ "$MIN" -lt "15" ]; then
+            echo "mode=monthly" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # DST reminders
+          if [ "$DOW" = "7" ] && [ "$MONTH" = "03" ] && [ "$DAY" -ge "8" ] && [ "$DAY" -le "14" ]; then
+            echo "mode=dst_reminder" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if [ "$DOW" = "7" ] && [ "$MONTH" = "11" ] && [ "$DAY" -ge "1" ] && [ "$DAY" -le "7" ]; then
+            echo "mode=dst_reminder" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Heartbeat — fires at :50 minutes
+          if [ "$MIN" -ge "48" ] && [ "$MIN" -le "55" ]; then
+            echo "mode=heartbeat" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Recap — fires at :30 minutes on the last scan hour
+          if [ "$MIN" -ge "28" ] && [ "$MIN" -le "35" ]; then
+            echo "mode=recap" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Default — hourly scan
+          echo "mode=scan" >> $GITHUB_OUTPUT
+
+      - name: Run SwingBot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python scanner.py ${{ steps.mode.outputs.mode }}
+
+      - name: Commit dedup file
+        if: always()
+        run: |
+          git config user.name  "SwingBot"
+          git config user.email "swingbot@github.com"
+          git add data/ || true
+          git diff --staged --quiet || git commit -m "Update dedup [skip ci]"
+          git push || true
