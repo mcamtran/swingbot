@@ -463,17 +463,27 @@ def run_scanner(mode='scan'):
     try:
         vix = get_vix()
 
+        # ── Test mode — sends a real message to confirm pipeline works ────────
+        if mode == 'test':
+            now_str = get_est_time().strftime('%I:%M %p EST')
+            send_telegram(
+                f'\U0001f7e2 <b>SwingBot Pipeline Test</b>\n'
+                f'━━━━━━━━━━━━━━━━━━━━━\n'
+                f'GitHub Actions → Telegram: ✅ Working\n'
+                f'Time: {now_str}\n'
+                f'VIX: {round(vix, 2) if vix else "N/A"}\n'
+                f'━━━━━━━━━━━━━━━━━━━━━\n'
+                f'SwingBot is ready to go live!'
+            )
+            return
+
         # ── Heartbeat ─────────────────────────────────────────────────────────
         if mode == 'heartbeat':
-            if is_market_holiday():
-                return  # silent on holidays
             send_heartbeat(vix)
             return
 
         # ── Daily recap ───────────────────────────────────────────────────────
         if mode == 'recap':
-            if is_market_holiday():
-                return
             send_recap(vix)
             return
 
