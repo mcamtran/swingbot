@@ -52,7 +52,7 @@ def send_telegram(text):
     """Send a message to Telegram with retry logic."""
     url  = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
     data = json.dumps({
-        'chat_id'    : CHAT_ID,
+        'chat_id'    : int(CHAT_ID),
         'text'       : text,
         'parse_mode' : 'HTML'
     }).encode()
