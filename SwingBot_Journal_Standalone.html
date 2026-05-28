@@ -544,13 +544,36 @@ function resetExitForm() {
 // ── Google Sheets push ───────────────────────────────────────────────────────
 async function pushToSheet(trade) {
   const url = loadWebhook();
-  if (!url || !url.startsWith('https://')) return;
-  try {
-    const encoded = encodeURIComponent(JSON.stringify(trade));
-    await fetch(url + '?data=' + encoded);
-  } catch(e) {
-    console.warn('Sheet push failed:', e.message);
+  if (!url || !url.startsWith('https://')) {
+    console.warn('No webhook URL configured');
+    return;
   }
+  return new Promise((resolve) => {
+    try {
+      const encoded = encodeURIComponent(JSON.stringify(trade));
+      const fullUrl = url + '?data=' + encoded;
+      // Use XMLHttpRequest — more reliable than fetch in Safari for cross-origin GETs
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', fullUrl, true);
+      xhr.onload = function() {
+        console.log('Sheet push response:', xhr.responseText);
+        resolve(true);
+      };
+      xhr.onerror = function() {
+        console.warn('Sheet push XHR error');
+        resolve(false);
+      };
+      xhr.ontimeout = function() {
+        console.warn('Sheet push timeout');
+        resolve(false);
+      };
+      xhr.timeout = 10000;
+      xhr.send();
+    } catch(e) {
+      console.warn('Sheet push failed:', e.message);
+      resolve(false);
+    }
+  });
 }
 
 // ── Webhook settings ─────────────────────────────────────────────────────────
