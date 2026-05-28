@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>SwingBot Journal</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { background: #020617; color: #e2e8f0; font-family: 'Courier New', monospace; max-width: 520px; margin: 0 auto; padding-bottom: 80px; min-height: 100vh; }
+.page { padding: 0 16px; }
+.header { padding: 20px 16px 0; border-bottom: 1px solid #0f172a; margin-bottom: 16px; }
+.header-label { color: #22c55e; font-size: 9px; letter-spacing: 3px; }
+.header-title { font-size: 18px; font-weight: 900; color: #f1f5f9; margin: 2px 0 14px; }
+.tabs { display: flex; border-bottom: 1px solid #1e293b; }
+.tab { padding: 8px 16px; background: transparent; border: none; color: #334155; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; font-size: 11px; letter-spacing: 1px; }
+.tab.active { color: #22c55e; border-bottom-color: #22c55e; }
+.card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 12px; }
+.stat-grid { display: flex; gap: 8px; margin-bottom: 16px; margin-top: 8px; }
+.stat-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 12px; flex: 1; min-width: 0; }
+.stat-label { color: #475569; font-size: 9px; letter-spacing: 2px; margin-bottom: 6px; }
+.stat-value { font-size: 20px; font-weight: 900; line-height: 1; }
+.stat-sub { color: #475569; font-size: 10px; margin-top: 4px; }
+.btn-primary { width: 100%; padding: 13px 0; background: #16a34a; border: none; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; letter-spacing: 2px; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { padding: 8px 12px; background: transparent; border: 1px solid #334155; color: #64748b; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.btn-log { width: 100%; padding: 12px 0; background: #052e16; border: 1px solid #166534; color: #4ade80; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; letter-spacing: 2px; margin-bottom: 16px; }
+.input { width: 100%; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; padding: 8px 10px; font-family: inherit; }
+.textarea { width: 100%; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; padding: 8px 10px; font-family: inherit; min-height: 80px; resize: vertical; }
+.label { color: #475569; font-size: 10px; letter-spacing: 1px; display: block; margin-bottom: 4px; }
+.field { margin-bottom: 14px; }
+.grade-row { display: flex; gap: 8px; }
+.grade-btn { flex: 1; padding: 8px 0; background: transparent; border: 1px solid #1e293b; color: #334155; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; }
+.grade-btn.active-sig { background: #0c2d4a; border-color: #3b82f6; color: #60a5fa; }
+.grade-btn.active-a   { background: #052e16; border-color: #22c55e; color: #4ade80; }
+.grade-btn.active-b   { background: #1c1a00; border-color: #fbbf24; color: #fbbf24; }
+.grade-btn.active-c   { background: #450a0a; border-color: #ef4444; color: #f87171; }
+.exit-reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.reason-btn { padding: 6px 10px; background: transparent; border: 1px solid #1e293b; color: #475569; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 10px; }
+.reason-btn.active { background: #0c2d4a; border-color: #3b82f6; color: #60a5fa; }
+.trade-card { background: #0b1120; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+.trade-card.open  { border: 1px solid #1e3a5f; }
+.trade-card.closed { border: 1px solid #1e293b; }
+.trade-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.trade-ticker { color: #f1f5f9; font-size: 16px; font-weight: 900; }
+.badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; letter-spacing: 2px; margin-left: 8px; }
+.badge-open   { background: #0c2d4a; color: #60a5fa; }
+.badge-closed { background: #1a1a2e; color: #475569; }
+.trade-sector { color: #475569; font-size: 9px; margin-left: 6px; }
+.pnl { font-size: 15px; font-weight: 700; }
+.pnl-pct { font-size: 10px; }
+.pnl-pos { color: #4ade80; }
+.pnl-neg { color: #f87171; }
+.pnl-nil { color: #94a3b8; }
+.trade-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.trade-field-label { color: #334155; font-size: 9px; }
+.trade-field-value { color: #94a3b8; font-size: 11px; font-weight: 600; }
+.trade-notes { margin-top: 8px; color: #475569; font-size: 11px; font-style: italic; border-top: 1px solid #1e293b; padding-top: 8px; }
+.trade-actions { display: flex; gap: 8px; margin-top: 10px; }
+.btn-exit { flex: 1; padding: 7px 0; background: #0c2d4a; border: 1px solid #1e3a5f; color: #60a5fa; border-radius: 6px; font-size: 11px; cursor: pointer; font-family: inherit; font-weight: 600; }
+.back-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; margin-top: 8px; }
+.back-btn { background: transparent; border: none; color: #475569; cursor: pointer; font-size: 20px; line-height: 1; padding: 0; }
+.section-title { color: #f1f5f9; font-size: 14px; font-weight: 700; }
+.confirm-box { background: #052e16; border: 1px solid #166534; border-radius: 8px; padding: 12px; margin-bottom: 16px; color: #4ade80; font-size: 11px; }
+.confirm-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1e293b; }
+.confirm-key   { color: #475569; font-size: 11px; }
+.confirm-val   { color: #e2e8f0; font-size: 11px; font-weight: 600; }
+.error-box { background: #450a0a; border: 1px solid #7f1d1d; border-radius: 6px; padding: 8px 12px; color: #f87171; font-size: 11px; margin-bottom: 10px; }
+.success-box { background: #052e16; border: 1px solid #166534; border-radius: 6px; padding: 8px 12px; color: #4ade80; font-size: 11px; margin-bottom: 10px; }
+.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.section-label { color: #475569; font-size: 9px; letter-spacing: 2px; margin-bottom: 10px; }
+.stats-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #1e293b; }
+.stats-key { color: #475569; font-size: 11px; }
+.stats-val { font-size: 11px; font-weight: 700; }
+.empty { text-align: center; color: #1e293b; padding: 40px; font-size: 12px; line-height: 2; }
+.webhook-input { width: 100%; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 11px; padding: 8px 10px; font-family: monospace; margin-bottom: 10px; }
+.info-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; margin-top: 16px; }
+.info-step { color: #475569; font-size: 11px; margin-bottom: 8px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-label">SWINGBOT</div>
+  <div class="header-title">Trade Journal</div>
+  <div class="tabs">
+    <button class="tab active" onclick="showView('journal')">Log</button>
+    <button class="tab" onclick="showView('stats')">Stats</button>
+    <button class="tab" onclick="showView('settings')">⚙️</button>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- JOURNAL VIEW -->
+  <div id="view-journal">
+    <div class="stat-grid" id="stat-strip"></div>
+    <button class="btn-log" onclick="showView('new')">+ LOG NEW TRADE</button>
+    <div id="trade-list"></div>
+  </div>
+
+  <!-- STATS VIEW -->
+  <div id="view-stats" style="display:none">
+    <div style="margin-top:8px" id="stats-content"></div>
+  </div>
+
+  <!-- SETTINGS VIEW -->
+  <div id="view-settings" style="display:none">
+    <div style="margin-top:16px">
+      <div class="section-label">GOOGLE SHEETS WEBHOOK</div>
+      <input class="webhook-input" id="webhook-url" placeholder="https://script.google.com/macros/s/.../exec" />
+      <div class="row-2" style="margin-bottom:10px">
+        <button class="btn-primary" onclick="saveWebhook()" style="font-size:12px;padding:10px 0">Save URL</button>
+        <button class="btn-primary" onclick="testWebhook()" style="font-size:12px;padding:10px 0;background:#1e3a5f;border:1px solid #3b82f6">Test</button>
+      </div>
+      <div id="webhook-msg"></div>
+      <div class="info-box">
+        <div class="section-label">HOW TO SET UP</div>
+        <div class="info-step">1. Open SwingBot_Sheets_Setup.html on your computer</div>
+        <div class="info-step">2. Follow steps 1–4 to create sheet and deploy script</div>
+        <div class="info-step">3. Copy the Web App URL from Google</div>
+        <div class="info-step">4. Paste above and tap Save URL</div>
+        <div class="info-step">5. Tap Test — should show webhook active</div>
+        <div class="info-step">6. Every saved trade auto-appears in your sheet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW TRADE FLOW -->
+  <div id="view-new" style="display:none">
+    <div class="back-row">
+      <button class="back-btn" onclick="showView('journal')">←</button>
+      <div class="section-title">Log Entry</div>
+    </div>
+    <div id="new-step-parse">
+      <div class="label">PASTE TRADE JSON FROM CLAUDE</div>
+      <textarea class="textarea" id="trade-json" placeholder='{"ticker":"BTDR","direction":"BUY","shares":5,"fill_price":15.25,"date":"2026-05-27","time":"10:40 AM","order_type":"LMT"}'></textarea>
+      <div id="parse-error" style="display:none" class="error-box"></div>
+      <button class="btn-primary" style="margin-top:10px" onclick="parseTrade()">Parse</button>
+    </div>
+    <div id="new-step-details" style="display:none">
+      <div class="confirm-box" id="entry-confirm"></div>
+      <div class="field">
+        <label class="label">SECTOR</label>
+        <input class="input" id="entry-sector" placeholder="e.g. Crypto" />
+      </div>
+      <div class="field">
+        <label class="label">SIGNAL GRADE</label>
+        <div class="grade-row" id="signal-grade-row">
+          <button class="grade-btn" onclick="setSigGrade('A')">A</button>
+          <button class="grade-btn" onclick="setSigGrade('B')">B</button>
+          <button class="grade-btn" onclick="setSigGrade('C')">C</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label">NOTES</label>
+        <textarea class="textarea" id="entry-notes" placeholder="Why did you take this trade?"></textarea>
+      </div>
+      <button class="btn-primary" id="save-entry-btn" onclick="saveEntry()">✓ SAVE ENTRY</button>
+    </div>
+  </div>
+
+  <!-- EXIT FLOW -->
+  <div id="view-exit" style="display:none">
+    <div class="back-row">
+      <button class="back-btn" onclick="showView('journal')">←</button>
+      <div class="section-title">Log Exit</div>
+    </div>
+    <div id="exit-step-parse">
+      <div class="label">PASTE EXIT JSON FROM CLAUDE</div>
+      <textarea class="textarea" id="exit-json" placeholder='{"ticker":"BTDR","direction":"SELL","shares":5,"fill_price":17.91,"date":"2026-06-01","time":"11:30 AM","order_type":"LMT"}'></textarea>
+      <div id="exit-parse-error" style="display:none" class="error-box"></div>
+      <button class="btn-primary" style="margin-top:10px" onclick="parseExit()">Parse</button>
+    </div>
+    <div id="exit-step-details" style="display:none">
+      <div class="confirm-box" id="exit-confirm"></div>
+      <div class="field">
+        <label class="label">EXIT REASON</label>
+        <div class="exit-reasons">
+          <button class="reason-btn" onclick="setReason('Target Hit')">Target Hit</button>
+          <button class="reason-btn" onclick="setReason('Stop Hit')">Stop Hit</button>
+          <button class="reason-btn" onclick="setReason('EMA21 Break')">EMA21 Break</button>
+          <button class="reason-btn" onclick="setReason('Manual')">Manual</button>
+          <button class="reason-btn" onclick="setReason('Other')">Other</button>
+        </div>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label class="label">SELF GRADE</label>
+        <div class="grade-row" id="self-grade-row">
+          <button class="grade-btn" onclick="setSelfGrade('A')">
+            <div>A</div><div style="font-size:8px;margin-top:2px">Followed rules</div>
+          </button>
+          <button class="grade-btn" onclick="setSelfGrade('B')">
+            <div>B</div><div style="font-size:8px;margin-top:2px">Mostly followed</div>
+          </button>
+          <button class="grade-btn" onclick="setSelfGrade('C')">
+            <div>C</div><div style="font-size:8px;margin-top:2px">Broke rules</div>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label">NOTES</label>
+        <textarea class="textarea" id="exit-notes" placeholder="What did you learn?"></textarea>
+      </div>
+      <button class="btn-primary" id="save-exit-btn" onclick="saveExit()">✓ SAVE EXIT</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Storage ──────────────────────────────────────────────────────────────────
+const TRADES_KEY  = 'swingbot-trades-v1';
+const WEBHOOK_KEY = 'swingbot-webhook-url';
+
+// ── HARDCODE YOUR WEBHOOK URL HERE ──────────────────────────────────────────
+// Edit this line with your Google Apps Script URL, then push to GitHub
+const HARDCODED_WEBHOOK = 'PASTE_YOUR_WEBHOOK_URL_HERE';
+// ────────────────────────────────────────────────────────────────────────────
+
+function loadTrades()  { try { return JSON.parse(localStorage.getItem(TRADES_KEY)  || '[]'); } catch { return []; } }
+function saveTrades(t) { localStorage.setItem(TRADES_KEY, JSON.stringify(t)); }
+function loadWebhook() {
+  // Hardcoded URL takes priority — works in both Safari and home screen app
+  if (HARDCODED_WEBHOOK && HARDCODED_WEBHOOK !== 'PASTE_YOUR_WEBHOOK_URL_HERE') {
+    return HARDCODED_WEBHOOK;
+  }
+  return localStorage.getItem(WEBHOOK_KEY) || '';
+}
+function saveWebhookLocal(u) { localStorage.setItem(WEBHOOK_KEY, u); }
+
+// ── State ────────────────────────────────────────────────────────────────────
+let trades      = loadTrades();
+let activeId    = null;
+let parsedEntry = null;
+let parsedExit  = null;
+let sigGrade    = 'B';
+let selfGrade   = 'A';
+let exitReason  = '';
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+// ── Views ────────────────────────────────────────────────────────────────────
+function showView(v) {
+  ['journal','stats','settings','new','exit'].forEach(id => {
+    document.getElementById('view-' + id).style.display = 'none';
+  });
+  document.getElementById('view-' + v).style.display = 'block';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  const tabMap = { journal: 0, stats: 1, settings: 2 };
+  if (tabMap[v] !== undefined) {
+    document.querySelectorAll('.tab')[tabMap[v]].classList.add('active');
+  }
+  if (v === 'journal') renderJournal();
+  if (v === 'stats')   renderStats();
+  if (v === 'settings') document.getElementById('webhook-url').value = loadWebhook();
+}
+
+// ── Format helpers ───────────────────────────────────────────────────────────
+function fmtDollar(n) {
+  if (n == null || n === '') return '—';
+  return (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+}
+function fmtPct(n) {
+  if (n == null || n === '') return '—';
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+}
+function pnlClass(n) {
+  if (n == null || n === '') return 'pnl-nil';
+  return n > 0 ? 'pnl-pos' : n < 0 ? 'pnl-neg' : 'pnl-nil';
+}
+
+// ── Render Journal ───────────────────────────────────────────────────────────
+function renderJournal() {
+  const closed   = trades.filter(t => t.exit_price);
+  const open     = trades.filter(t => !t.exit_price);
+  const wins     = closed.filter(t => t.pnl > 0);
+  const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0);
+  const winRate  = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+
+  document.getElementById('stat-strip').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">TOTAL P&L</div>
+      <div class="stat-value ${pnlClass(totalPnl)}">${fmtDollar(totalPnl)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">WIN RATE</div>
+      <div class="stat-value" style="color:#f1f5f9">${winRate}%</div>
+      <div class="stat-sub">${wins.length}W / ${closed.length - wins.length}L</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">OPEN</div>
+      <div class="stat-value" style="color:#f1f5f9">${open.length}</div>
+      <div class="stat-sub">${closed.length} closed</div>
+    </div>`;
+
+  if (trades.length === 0) {
+    document.getElementById('trade-list').innerHTML = '<div class="empty">No trades yet.<br>Tap + LOG NEW TRADE to start.</div>';
+    return;
+  }
+
+  document.getElementById('trade-list').innerHTML = trades.map(t => {
+    const isOpen = !t.exit_price;
+    const pc = pnlClass(t.pnl);
+    return `
+      <div class="trade-card ${isOpen ? 'open' : 'closed'}">
+        <div class="trade-header">
+          <div>
+            <span class="trade-ticker">${t.ticker}</span>
+            <span class="badge ${isOpen ? 'badge-open' : 'badge-closed'}">${isOpen ? 'OPEN' : 'CLOSED'}</span>
+            ${t.sector ? '<span class="trade-sector">' + t.sector + '</span>' : ''}
+          </div>
+          <div style="text-align:right">
+            <div class="pnl ${pc}">${t.pnl != null ? fmtDollar(t.pnl) : '—'}</div>
+            ${t.pnl_pct != null ? '<div class="pnl-pct ' + pc + '">' + fmtPct(t.pnl_pct) + '</div>' : ''}
+          </div>
+        </div>
+        <div class="trade-grid">
+          <div><div class="trade-field-label">Entry</div><div class="trade-field-value">${t.entry_price ? '$' + t.entry_price.toFixed(2) : '—'}</div></div>
+          <div><div class="trade-field-label">Exit</div><div class="trade-field-value">${t.exit_price ? '$' + parseFloat(t.exit_price).toFixed(2) : '—'}</div></div>
+          <div><div class="trade-field-label">Shares</div><div class="trade-field-value">${t.shares || '—'}</div></div>
+          <div><div class="trade-field-label">Sig Grade</div><div class="trade-field-value">${t.signal_grade || '—'}</div></div>
+          <div><div class="trade-field-label">Self Grade</div><div class="trade-field-value" style="color:${gradeColor(t.self_grade)}">${t.self_grade || '—'}</div></div>
+          <div><div class="trade-field-label">Exit</div><div class="trade-field-value">${t.exit_reason || '—'}</div></div>
+        </div>
+        ${t.notes ? '<div class="trade-notes">' + t.notes + '</div>' : ''}
+        <div class="trade-actions">
+          ${isOpen ? '<button class="btn-exit" onclick="startExit(\'' + t.id + '\')">+ Log Exit</button>' : ''}
+          <button class="btn-secondary" onclick="deleteTrade(\'' + t.id + '\')">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function gradeColor(g) {
+  return g === 'A' ? '#4ade80' : g === 'B' ? '#fbbf24' : g === 'C' ? '#f87171' : '#94a3b8';
+}
+
+// ── Render Stats ─────────────────────────────────────────────────────────────
+function renderStats() {
+  const closed   = trades.filter(t => t.exit_price);
+  const wins     = closed.filter(t => t.pnl > 0);
+  const losses   = closed.filter(t => t.pnl < 0);
+  const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0);
+  const winRate  = closed.length ? (wins.length / closed.length * 100).toFixed(1) : 0;
+  const avgWin   = wins.length   ? wins.reduce((s,t) => s + t.pnl, 0) / wins.length : 0;
+  const avgLoss  = losses.length ? losses.reduce((s,t) => s + t.pnl, 0) / losses.length : 0;
+  const expect   = closed.length ? ((wins.length/closed.length)*avgWin + (losses.length/closed.length)*avgLoss) : 0;
+  const avgR     = closed.filter(t => t.r_mult).length ?
+    closed.filter(t => t.r_mult).reduce((s,t) => s + t.r_mult, 0) / closed.filter(t => t.r_mult).length : 0;
+
+  const byGrade = ['A','B','C'].map(g => {
+    const gt   = closed.filter(t => t.self_grade === g);
+    const gPnl = gt.reduce((s,t) => s + (t.pnl||0), 0);
+    const gW   = gt.filter(t => t.pnl > 0).length;
+    return `<div class="stats-row">
+      <span class="stats-key" style="color:${gradeColor(g)}">${g} — ${g==='A'?'Followed rules':g==='B'?'Mostly followed':'Broke rules'}</span>
+      <span class="stats-val" style="color:${gPnl>=0?'#4ade80':'#f87171'}">${gt.length ? fmtDollar(gPnl) + ' (' + gW + '/' + gt.length + ')' : '—'}</span>
+    </div>`;
+  }).join('');
+
+  const byExit = ['Target Hit','Stop Hit','EMA21 Break','Manual','Other'].map(r => {
+    const rt   = closed.filter(t => t.exit_reason === r);
+    if (!rt.length) return '';
+    const rPnl = rt.reduce((s,t) => s + (t.pnl||0), 0);
+    return `<div class="stats-row">
+      <span class="stats-key">${r}</span>
+      <span class="stats-val" style="color:${rPnl>=0?'#4ade80':'#f87171'}">${fmtDollar(rPnl)} (${rt.length})</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('stats-content').innerHTML = `
+    <div class="row-2" style="margin-bottom:8px">
+      <div class="stat-card"><div class="stat-label">TOTAL P&L</div><div class="stat-value ${pnlClass(totalPnl)}">${fmtDollar(totalPnl)}</div></div>
+      <div class="stat-card"><div class="stat-label">WIN RATE</div><div class="stat-value" style="color:#f1f5f9">${winRate}%</div><div class="stat-sub">${closed.length} trades</div></div>
+      <div class="stat-card"><div class="stat-label">AVG WIN</div><div class="stat-value pnl-pos">${fmtDollar(avgWin)}</div></div>
+      <div class="stat-card"><div class="stat-label">AVG LOSS</div><div class="stat-value pnl-neg">${fmtDollar(avgLoss)}</div></div>
+      <div class="stat-card"><div class="stat-label">EXPECTANCY</div><div class="stat-value ${pnlClass(expect)}">${fmtDollar(expect)}</div></div>
+      <div class="stat-card"><div class="stat-label">AVG R-MULT</div><div class="stat-value" style="color:#f1f5f9">${avgR.toFixed(2)}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:8px">
+      <div class="section-label">P&L BY SELF GRADE</div>
+      ${byGrade || '<div style="color:#334155;font-size:11px">No closed trades yet</div>'}
+    </div>
+    <div class="card">
+      <div class="section-label">P&L BY EXIT REASON</div>
+      ${byExit || '<div style="color:#334155;font-size:11px">No closed trades yet</div>'}
+    </div>`;
+}
+
+// ── Parse ────────────────────────────────────────────────────────────────────
+function parseJSON(raw) {
+  const clean = raw.replace(/```json|```/g, '').trim();
+  const m     = clean.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('No JSON found — paste the full JSON block from Claude');
+  const p = JSON.parse(m[0]);
+  ['ticker','direction','shares','fill_price','date','time'].forEach(f => {
+    if (p[f] == null) throw new Error('Missing field: ' + f);
+  });
+  return p;
+}
+
+function parseTrade() {
+  const raw = document.getElementById('trade-json').value;
+  const errEl = document.getElementById('parse-error');
+  try {
+    parsedEntry = parseJSON(raw);
+    errEl.style.display = 'none';
+    document.getElementById('new-step-parse').style.display = 'none';
+    document.getElementById('new-step-details').style.display = 'block';
+    setSigGrade('B');
+    document.getElementById('entry-confirm').innerHTML =
+      '✅ ' + parsedEntry.ticker + ' — ' + parsedEntry.direction + ' ' + parsedEntry.shares + ' @ $' + parsedEntry.fill_price;
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+function parseExit() {
+  const raw = document.getElementById('exit-json').value;
+  const errEl = document.getElementById('exit-parse-error');
+  try {
+    parsedExit = parseJSON(raw);
+    errEl.style.display = 'none';
+    document.getElementById('exit-step-parse').style.display = 'none';
+    document.getElementById('exit-step-details').style.display = 'block';
+    setSelfGrade('A');
+    document.getElementById('exit-confirm').innerHTML =
+      '✅ Exit — ' + parsedExit.ticker + ' @ $' + parsedExit.fill_price;
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+// ── Grade / Reason selectors ─────────────────────────────────────────────────
+function setSigGrade(g) {
+  sigGrade = g;
+  document.querySelectorAll('#signal-grade-row .grade-btn').forEach((b,i) => {
+    b.className = 'grade-btn' + (['A','B','C'][i] === g ? ' active-sig' : '');
+  });
+}
+
+function setSelfGrade(g) {
+  selfGrade = g;
+  const colors = { A: 'active-a', B: 'active-b', C: 'active-c' };
+  document.querySelectorAll('#self-grade-row .grade-btn').forEach((b, i) => {
+    b.className = 'grade-btn' + (['A','B','C'][i] === g ? ' ' + colors[g] : '');
+  });
+}
+
+function setReason(r) {
+  exitReason = r;
+  document.querySelectorAll('.reason-btn').forEach(b => {
+    b.className = 'reason-btn' + (b.textContent.trim() === r ? ' active' : '');
+  });
+}
+
+// ── Save Entry ───────────────────────────────────────────────────────────────
+async function saveEntry() {
+  const btn = document.getElementById('save-entry-btn');
+  btn.disabled = true; btn.textContent = 'SAVING...';
+  const trade = {
+    // Core identity
+    id:           uid(),
+    ticker:       parsedEntry.ticker.toUpperCase(),
+    direction:    parsedEntry.direction,
+    shares:       parsedEntry.shares,
+    entry_price:  parsedEntry.fill_price,
+    entry_date:   parsedEntry.date,
+    entry_time:   parsedEntry.time,
+    // Form fields — override parsed if user typed something
+    sector:       document.getElementById('entry-sector').value.trim() || parsedEntry.sector || '',
+    signal_grade: sigGrade,
+    notes:        document.getElementById('entry-notes').value.trim(),
+    // Alert fields — carried from pasted JSON
+    stop:         parsedEntry.stop         || '',
+    target:       parsedEntry.target       || '',
+    atr:          parsedEntry.atr          || '',
+    rel_vol:      parsedEntry.rel_vol      || '',
+    swing_delta:  parsedEntry.swing_delta  || '',
+    float_m:      parsedEntry.float_m      || '',
+    vix:          parsedEntry.vix          || '',
+    score:        parsedEntry.score        || '',
+    scores:       parsedEntry.scores       || [],
+    // Exit fields — empty at entry
+    self_grade:   null,
+    exit_price:   null,
+    exit_date:    null,
+    exit_reason:  null,
+    pnl:          null,
+    pnl_pct:      null,
+    r_mult:       null,
+  };
+  trades = [trade, ...trades];
+  saveTrades(trades);
+  await pushToSheet(trade);
+  resetEntryForm();
+  showView('journal');
+}
+
+// ── Save Exit ────────────────────────────────────────────────────────────────
+async function saveExit() {
+  if (!exitReason) { alert('Please select an exit reason'); return; }
+  const btn = document.getElementById('save-exit-btn');
+  btn.disabled = true; btn.textContent = 'SAVING...';
+  const trade     = trades.find(t => t.id === activeId);
+  const mult      = trade.direction === 'BUY' ? 1 : -1;
+  const pnl       = Math.round((parsedExit.fill_price - trade.entry_price) * mult * trade.shares * 100) / 100;
+  const pnl_pct   = Math.round((parsedExit.fill_price - trade.entry_price) / trade.entry_price * mult * 10000) / 100;
+  const riskPer   = Math.abs(trade.entry_price - (trade.stop || trade.entry_price));
+  const r_mult    = riskPer > 0 ? Math.round((parsedExit.fill_price - trade.entry_price) * mult / riskPer * 100) / 100 : null;
+
+  const updated = { ...trade,
+    exit_price:  parsedExit.fill_price,
+    exit_date:   parsedExit.date,
+    exit_time:   parsedExit.time,
+    exit_reason: exitReason,
+    self_grade:  selfGrade,
+    notes:       document.getElementById('exit-notes').value.trim() || trade.notes,
+    pnl, pnl_pct, r_mult,
+  };
+  trades = trades.map(t => t.id === activeId ? updated : t);
+  saveTrades(trades);
+  await pushToSheet(updated);
+  resetExitForm();
+  showView('journal');
+}
+
+function startExit(id) {
+  activeId = id;
+  document.getElementById('exit-step-parse').style.display = 'block';
+  document.getElementById('exit-step-details').style.display = 'none';
+  document.getElementById('exit-json').value = '';
+  exitReason = '';
+  showView('exit');
+}
+
+function deleteTrade(id) {
+  if (!confirm('Delete this trade?')) return;
+  trades = trades.filter(t => t.id !== id);
+  saveTrades(trades);
+  renderJournal();
+}
+
+// ── Reset forms ──────────────────────────────────────────────────────────────
+function resetEntryForm() {
+  parsedEntry = null; sigGrade = 'B';
+  document.getElementById('trade-json').value = '';
+  document.getElementById('entry-sector').value = '';
+  document.getElementById('entry-notes').value = '';
+  document.getElementById('new-step-parse').style.display = 'block';
+  document.getElementById('new-step-details').style.display = 'none';
+  const btn = document.getElementById('save-entry-btn');
+  btn.disabled = false; btn.textContent = '✓ SAVE ENTRY';
+}
+
+function resetExitForm() {
+  parsedExit = null; activeId = null; exitReason = ''; selfGrade = 'A';
+  document.getElementById('exit-json').value = '';
+  document.getElementById('exit-notes').value = '';
+  document.getElementById('exit-step-parse').style.display = 'block';
+  document.getElementById('exit-step-details').style.display = 'none';
+  const btn = document.getElementById('save-exit-btn');
+  btn.disabled = false; btn.textContent = '✓ SAVE EXIT';
+}
+
+// ── Google Sheets push ───────────────────────────────────────────────────────
+async function pushToSheet(trade) {
+  const url = loadWebhook();
+  if (!url || !url.startsWith('https://')) {
+    console.warn('No webhook URL configured');
+    return;
+  }
+  return new Promise((resolve) => {
+    try {
+      const encoded = encodeURIComponent(JSON.stringify(trade));
+      const fullUrl = url + '?data=' + encoded;
+      // Use XMLHttpRequest — more reliable than fetch in Safari for cross-origin GETs
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', fullUrl, true);
+      xhr.onload = function() {
+        console.log('Sheet push response:', xhr.responseText);
+        resolve(true);
+      };
+      xhr.onerror = function() {
+        console.warn('Sheet push XHR error');
+        resolve(false);
+      };
+      xhr.ontimeout = function() {
+        console.warn('Sheet push timeout');
+        resolve(false);
+      };
+      xhr.timeout = 10000;
+      xhr.send();
+    } catch(e) {
+      console.warn('Sheet push failed:', e.message);
+      resolve(false);
+    }
+  });
+}
+
+// ── Webhook settings ─────────────────────────────────────────────────────────
+function saveWebhook() {
+  const url = document.getElementById('webhook-url').value.trim();
+  saveWebhookLocal(url);
+  const el = document.getElementById('webhook-msg');
+  el.className = 'success-box';
+  el.textContent = '✅ URL saved';
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+async function testWebhook() {
+  const url = document.getElementById('webhook-url').value.trim();
+  const el  = document.getElementById('webhook-msg');
+  if (!url) { el.className = 'error-box'; el.textContent = 'Enter a URL first'; el.style.display = 'block'; return; }
+  el.className = 'success-box'; el.textContent = 'Testing...'; el.style.display = 'block';
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    el.textContent = data.status ? '✅ ' + data.status : '✅ Connected';
+  } catch(e) {
+    el.className = 'error-box';
+    el.textContent = '❌ ' + e.message;
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+renderJournal();
+</script>
+</body>
+</html>
