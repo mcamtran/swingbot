@@ -212,9 +212,20 @@ body { background: #020617; color: #e2e8f0; font-family: 'Courier New', monospac
 const TRADES_KEY  = 'swingbot-trades-v1';
 const WEBHOOK_KEY = 'swingbot-webhook-url';
 
+// ── HARDCODE YOUR WEBHOOK URL HERE ──────────────────────────────────────────
+// Edit this line with your Google Apps Script URL, then push to GitHub
+const HARDCODED_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwr2ba2kh_kcaq5DUTx1K7_86hmMKVBWCPwCOQ8AaTCza31sNnsu6P5ng9EjQIl5sPfHA/exec';
+// ────────────────────────────────────────────────────────────────────────────
+
 function loadTrades()  { try { return JSON.parse(localStorage.getItem(TRADES_KEY)  || '[]'); } catch { return []; } }
 function saveTrades(t) { localStorage.setItem(TRADES_KEY, JSON.stringify(t)); }
-function loadWebhook() { return localStorage.getItem(WEBHOOK_KEY) || ''; }
+function loadWebhook() {
+  // Hardcoded URL takes priority — works in both Safari and home screen app
+  if (HARDCODED_WEBHOOK && HARDCODED_WEBHOOK !== 'PASTE_YOUR_WEBHOOK_URL_HERE') {
+    return HARDCODED_WEBHOOK;
+  }
+  return localStorage.getItem(WEBHOOK_KEY) || '';
+}
 function saveWebhookLocal(u) { localStorage.setItem(WEBHOOK_KEY, u); }
 
 // ── State ────────────────────────────────────────────────────────────────────
