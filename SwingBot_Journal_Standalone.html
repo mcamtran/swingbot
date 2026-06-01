@@ -595,7 +595,13 @@
           <input type="text" id="entry-notes" placeholder="Optional notes">
         </div>
       </div>
-      <button class="btn btn-primary" onclick="submitEntry()">Save Entry</button>
+      <div id="entry-confirm" class="hidden" style="margin-top:8px">
+        <div style="font-size:12px;color:var(--yellow);margin-bottom:6px;text-align:center">
+          ⚠️ Confirm — tap Save to write to Google Sheets
+        </div>
+        <button class="btn btn-primary" onclick="submitEntry()">✓ Confirm &amp; Save Entry</button>
+      </div>
+      <button class="btn btn-secondary" id="entry-confirm-btn" onclick="showEntryConfirm()" style="margin-top:8px">Save Entry</button>
       <div id="entry-status"></div>
     </div>
   </div>
@@ -649,7 +655,13 @@
           <input type="text" id="exit-notes" placeholder="Optional notes">
         </div>
       </div>
-      <button class="btn btn-primary" onclick="submitExit()">Save Exit</button>
+      <div id="exit-confirm" class="hidden" style="margin-top:8px">
+        <div style="font-size:12px;color:var(--yellow);margin-bottom:6px;text-align:center">
+          ⚠️ Confirm — tap Save to write to Google Sheets
+        </div>
+        <button class="btn btn-primary" onclick="submitExit()">✓ Confirm &amp; Save Exit</button>
+      </div>
+      <button class="btn btn-secondary" id="exit-confirm-btn" onclick="showExitConfirm()" style="margin-top:8px">Save Exit</button>
       <div id="exit-status"></div>
     </div>
   </div>
@@ -803,9 +815,11 @@ let parsedExit   = null;
 // INIT
 // ═══════════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', () => {
-  // Load webhook URL
   const saved = localStorage.getItem('swingbot_webhook');
   document.getElementById('webhook-url').value = saved || HARDCODED_WEBHOOK;
+  // Show loading state in exit dropdown immediately
+  document.getElementById('exit-trade-select').innerHTML =
+    '<option value="">⏳ Loading trades...</option>';
   loadTrades();
 });
 
@@ -858,6 +872,10 @@ async function loadTrades() {
     renderTrades(currentFilter);
     updateHeader();
     populateExitSelect();
+    // Update stats if stats tab is currently active
+    if (document.getElementById('tab-stats').classList.contains('active')) {
+      renderStats();
+    }
 
   } catch(e) {
     document.getElementById('trades-count').textContent = 'Error loading trades';
@@ -881,8 +899,8 @@ function renderTrades(filter) {
 
   if (filter === 'open')   trades = trades.filter(t => t.is_open);
   if (filter === 'closed') trades = trades.filter(t => !t.is_open);
-  if (filter === 'win')    trades = trades.filter(t => !t.is_open && t.pnl_dollar > 0);
-  if (filter === 'loss')   trades = trades.filter(t => !t.is_open && t.pnl_dollar < 0);
+  if (filter === 'win')    trades = trades.filter(t => !t.is_open && Number(t.pnl_dollar) > 0);
+  if (filter === 'loss')   trades = trades.filter(t => !t.is_open && Number(t.pnl_dollar) < 0);
 
   document.getElementById('trades-count').textContent =
     `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
@@ -898,14 +916,14 @@ function renderTrades(filter) {
 
   document.getElementById('trades-list').innerHTML = trades.map(t => {
     const isOpen  = t.is_open;
-    const isWin   = !isOpen && t.pnl_dollar > 0;
+    const isWin   = !isOpen && Number(t.pnl_dollar) > 0;
     const cardCls = isOpen ? 'open' : (isWin ? 'closed win' : 'closed loss');
-    const pnlStr  = t.pnl_dollar !== '' && t.pnl_dollar !== null
+    const pnlStr  = t.pnl_dollar !== '' && t.pnl_dollar !== null && Number(t.pnl_dollar) !== 0
       ? `<span class="${t.pnl_dollar >= 0 ? 'pos' : 'neg'}">
            ${t.pnl_dollar >= 0 ? '+' : ''}$${Number(t.pnl_dollar).toFixed(2)}
          </span>` : `<span class="tag tag-open">OPEN</span>`;
 
-    const rStr = t.r_multiple !== '' && t.r_multiple !== null
+    const rStr = t.r_multiple !== '' && t.r_multiple !== null && Number(t.r_multiple) !== 0
       ? `${t.r_multiple > 0 ? '+' : ''}${Number(t.r_multiple).toFixed(2)}R` : '';
 
     return `
@@ -949,9 +967,16 @@ function renderTrades(filter) {
 
 function quickExit(id, ticker) {
   switchTab('log');
-  document.getElementById('exit-trade-select').value = id;
-  document.getElementById('exit-json').focus();
-  window.scrollTo(0, document.getElementById('exit-json').offsetTop - 100);
+  // Wait for tab switch then set value — avoids race condition
+  setTimeout(() => {
+    const sel = document.getElementById('exit-trade-select');
+    sel.value = id;
+    // If value didn't stick, the option may not exist yet — reload trades first
+    if (sel.value !== id) {
+      loadTrades().then(() => { sel.value = id; });
+    }
+    document.getElementById('exit-json').focus();
+  }, 100);
 }
 
 function populateExitSelect() {
@@ -967,10 +992,10 @@ function populateExitSelect() {
 // STATS
 // ═══════════════════════════════════════════════════════════════
 function updateHeader() {
-  const closed = allTrades.filter(t => !t.is_open && t.pnl_dollar !== '');
+  const closed = allTrades.filter(t => !t.is_open && t.pnl_dollar !== '' && Number(t.pnl_dollar) !== 0);
   const open   = allTrades.filter(t => t.is_open);
   const totalPnl = closed.reduce((s, t) => s + Number(t.pnl_dollar), 0);
-  const wins     = closed.filter(t => t.pnl_dollar > 0).length;
+  const wins     = closed.filter(t => Number(t.pnl_dollar) > 0).length;
   const wr       = closed.length > 0 ? Math.round(wins / closed.length * 100) : 0;
 
   const pEl = document.getElementById('h-pnl');
@@ -982,7 +1007,7 @@ function updateHeader() {
 }
 
 function renderStats() {
-  const closed = allTrades.filter(t => !t.is_open && t.pnl_dollar !== '');
+  const closed = allTrades.filter(t => !t.is_open && t.pnl_dollar !== '' && Number(t.pnl_dollar) !== 0);
   const wins   = closed.filter(t => Number(t.pnl_dollar) > 0);
   const losses = closed.filter(t => Number(t.pnl_dollar) < 0);
 
@@ -1040,7 +1065,7 @@ function renderBreakdown(elId, trades, field) {
       <div class="breakdown-row">
         <div>
           <div class="breakdown-label">${key}</div>
-          <div style="font-size:11px;color:var(--muted)">${g.count} trades · ${Math.round(g.wins/g.count*100)}% WR</div>
+          <div style="font-size:11px;color:var(--muted)">${g.count} trades · ${g.count > 0 ? Math.round(g.wins/g.count*100) : 0}% WR</div>
         </div>
         <div class="breakdown-val ${g.pnl >= 0 ? 'pos' : 'neg'}">
           ${g.pnl >= 0 ? '+' : ''}$${g.pnl.toFixed(2)}
@@ -1063,7 +1088,7 @@ function parseEntry() {
     const atr    = d.atr || 0;
     const stop   = d.stop || (entry - atr);
     const target = d.target || (entry + 2*atr);
-    const shares = d.shares || Math.max(1, Math.round(7 / atr));
+    const shares = d.shares || (atr > 0 ? Math.max(1, Math.round(7 / atr)) : 1);
 
     document.getElementById('entry-fields').innerHTML = [
       ['Ticker',  d.ticker || '—'],
@@ -1113,7 +1138,7 @@ async function submitEntry() {
     ticker       : d.ticker,
     entry_date   : d.date || new Date().toISOString().split('T')[0],
     direction    : d.direction || 'BUY',
-    shares       : d.shares || Math.max(1, Math.round(7 / atr)),
+    shares       : d.shares || (atr > 0 ? Math.max(1, Math.round(7 / atr)) : 1),
     entry_price  : entry,
     stop         : d.stop || (entry - atr),
     target       : d.target || (entry + 2*atr),
@@ -1130,10 +1155,18 @@ async function submitEntry() {
   };
 
   showStatus('entry-status', 'Saving...', 'loading');
+  const saveBtn = document.querySelector('#tab-log .btn-primary');
+  if (saveBtn) saveBtn.disabled = true;
 
   const ok = await sendToSheet(payload);
+  if (saveBtn) saveBtn.disabled = false;
   if (ok) {
-    showStatus('entry-status', `${d.ticker} entry saved ✓`, 'success');
+    const savedId = payload.id;
+    document.getElementById('entry-status').innerHTML = `
+      <div class="status success">
+        ${d.ticker} entry saved ✓<br>
+        <span style="font-family:var(--mono);font-size:11px;opacity:0.8">Trade ID: ${savedId}</span>
+      </div>`;
     document.getElementById('entry-json').value = '';
     document.getElementById('entry-preview').classList.add('hidden');
     parsedEntry = null;
@@ -1192,7 +1225,14 @@ async function submitExit() {
   const selfGrade = document.getElementById('exit-self-grade').value;
   const notes     = document.getElementById('exit-notes').value;
 
-  if (!tradeId)   { showStatus('exit-status', 'Please select the trade to exit', 'error'); return; }
+  if (!tradeId) {
+    const sel = document.getElementById('exit-trade-select');
+    const msg = sel.options.length <= 1
+      ? 'No open trades loaded — go to Settings and Test Connection first'
+      : 'Please select the trade to exit';
+    showStatus('exit-status', msg, 'error');
+    return;
+  }
   if (!reason)    { showStatus('exit-status', 'Please select an exit reason', 'error'); return; }
   if (!selfGrade) { showStatus('exit-status', 'Please select your self grade', 'error'); return; }
 
@@ -1228,8 +1268,11 @@ async function submitExit() {
   };
 
   showStatus('exit-status', 'Saving...', 'loading');
+  const exitBtn = document.querySelector('#tab-log .card:last-child .btn-primary');
+  if (exitBtn) exitBtn.disabled = true;
 
   const ok = await sendToSheet(payload);
+  if (exitBtn) exitBtn.disabled = false;
   if (ok) {
     showStatus('exit-status', `${payload.ticker} exit saved ✓`, 'success');
     document.getElementById('exit-json').value = '';
@@ -1252,6 +1295,9 @@ async function sendToSheet(payload) {
     return d.success === true;
   } catch(e) {
     console.error('Sheet error:', e);
+    if (e.message && (e.message.includes('CORS') || e.message.includes('fetch') || e.message.includes('network'))) {
+      console.error('CORS/Network error — check webhook URL in Settings');
+    }
     return false;
   }
 }
@@ -1259,10 +1305,35 @@ async function sendToSheet(payload) {
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
+function showEntryConfirm() {
+  if (!parsedEntry) { showStatus('entry-status', 'Parse JSON first', 'error'); return; }
+  document.getElementById('entry-confirm').classList.remove('hidden');
+  document.getElementById('entry-confirm-btn').classList.add('hidden');
+}
+
+function showExitConfirm() {
+  if (!parsedExit) { showStatus('exit-status', 'Parse JSON first', 'error'); return; }
+  document.getElementById('exit-confirm').classList.remove('hidden');
+  document.getElementById('exit-confirm-btn').classList.add('hidden');
+}
+
 function showStatus(elId, msg, type) {
   const el = document.getElementById(elId);
   el.innerHTML = `<div class="status ${type}">${msg}</div>`;
   if (type === 'success') setTimeout(() => el.innerHTML = '', 4000);
+  // Reset confirm buttons on any status change
+  const entryConfirm = document.getElementById('entry-confirm');
+  const entryBtn     = document.getElementById('entry-confirm-btn');
+  const exitConfirm  = document.getElementById('exit-confirm');
+  const exitBtn      = document.getElementById('exit-confirm-btn');
+  if (elId === 'entry-status' && type !== 'loading') {
+    if (entryConfirm) entryConfirm.classList.add('hidden');
+    if (entryBtn) entryBtn.classList.remove('hidden');
+  }
+  if (elId === 'exit-status' && type !== 'loading') {
+    if (exitConfirm) exitConfirm.classList.add('hidden');
+    if (exitBtn) exitBtn.classList.remove('hidden');
+  }
 }
 </script>
 </body>
