@@ -1,5 +1,5 @@
 # Trading System Overview – Cam's Semi-Systematic Swing Trading Plan
-*Last updated: May 2026*
+*Last updated: May 29, 2026*
 
 ---
 
@@ -28,16 +28,30 @@ Long-only trading in stocks above the daily 200 SMA.
 
 A trade qualifies **only** if ALL of the following are met:
 
-1. 9 EMA crosses above 21 EMA on the 1H chart
-2. Price above 200 SMA on the daily chart (using yesterday's closing price)
+1. 9 EMA crosses above 21 EMA on the 1H chart (confirmed in Thinkorswim — TOS is source of truth)
+2. Price above 200 SMA on the daily chart
 3. Setup receives **Grade B or higher** from the automated grading system
-4. VIX is between **15 and 25** — no exceptions, no negotiation
+4. VIX is between **15 and 25** — no exceptions
 5. No earnings announcement within the next **7 days**
 6. Chart has clean structure and room to move higher (visual confirmation in Thinkorswim)
 7. No more than 5 positions currently open
+8. ATR ≥ 1.0% of price — below this the stop is too tight to survive normal spread noise
+9. Float ≥ 20M shares — below this liquidity is too thin for clean exits
+10. Signal fired during market hours (9:30 AM – 3:30 PM EST)
 
 **No discretionary negotiation once a setup passes all criteria.**
 **Grade A is a bonus. Grade B is the primary signal. Grade C and D are never taken.**
+
+---
+
+## Entry Execution Rules
+
+**Order Type:** Limit order — Day Only
+**Entry Price:** Alert price exactly — never market order
+**Cancel Rule:** If unfilled by 3:30 PM EST — cancel, signal expired
+**No Chase Rule:** Skip if current price is more than 3% above alert entry price
+**Signal Expiration:** A 1H EMA cross signal expires at market close the same day it fired. Never carry a signal to the next day.
+**Faded Entry:** Place limit order at alert price and walk away. If price pulls back to your entry it fills. If it doesn't pull back the order expires. Never convert to market order to chase.
 
 ---
 
@@ -47,9 +61,9 @@ Setups are scored automatically using a 10-question checklist (0–10 points):
 
 | Q | Question | How Measured |
 |---|---|---|
-| Q1 | EMA crossover confirmed? | Scanner — auto pass |
-| Q2 | Price above 200 SMA? | Scanner — auto pass |
-| Q3 | Price staying above 10/20 EMA after cross? | Last 3 bars above both EMAs |
+| Q1 | EMA crossover confirmed? | TOS scanner — confirmed on 1H chart |
+| Q2 | Price above 200 SMA? | TOS scanner — daily chart |
+| Q3 | Price staying above EMA9/21 after cross? | Last 3 bars above both EMAs |
 | Q4 | Clear direction — not choppy? | ADX > 20 |
 | Q5 | Price near a swing high/low from last 20 days? | Within 3% of recent swing level |
 | Q6 | VIX between 15–25? | From VIX data |
@@ -60,26 +74,54 @@ Setups are scored automatically using a 10-question checklist (0–10 points):
 
 **Grades:** A = 9–10 | B = 7–8 | C = 5–6 | D = 0–4
 
+**Note:** Q1 and Q2 are confirmed by the scanner before grading begins. Score reweighting to be reviewed after 50 live trades and backtest rerun.
+
+---
+
+## Verdict Rules
+
+| Verdict | Conditions |
+|---------|-----------|
+| **TAKE** | Score 7+ AND time-adjusted RVol ≥ threshold AND ATR ≥ 1.0% AND market hours AND data ≤ 30 min old |
+| **CAUTION** | Score 5-6 OR RVol borderline for time of day OR after hours signal OR data stale |
+| **SKIP** | Score <5 OR RVol below threshold OR ATR <1.0% OR SwingΔ >5% OR broken structure |
+
+---
+
+## Time-Adjusted Relative Volume
+
+RVol means different things at different times of day. A 0.7x RVol at 9:45 AM is a strong signal. The same number at 3:00 PM is weak.
+
+| Signal Time | Minimum Acceptable RVol |
+|-------------|------------------------|
+| Before 10:00 AM | 0.3x — early, volume still building |
+| 10:00–11:00 AM | 0.5x — on pace for the session |
+| 11:00 AM–1:00 PM | 0.7x — mid-session baseline |
+| 1:00–2:00 PM | 1.0x — institutional confirmation needed |
+| After 2:00 PM | 1.2x — late session, needs strong conviction |
+
 ---
 
 ## Risk Management Rules
 
-**Position Risk**
+**Position Sizing**
 - Fixed dollar risk per trade: **$7 during initial testing phase**
-- Stop-loss based on **2×ATR**
-- Profit target set at **4×ATR**
+- Stop-loss: Entry − **1×ATR** (changed from 2×ATR — May 2026)
+- Profit target: Entry + **2×ATR** (changed from 4×ATR — May 2026)
+- R:R ratio: 2:1 minimum
 - Dead trade exit: close after **10 days** with no meaningful movement
 
 **Trade Management**
-- Bracket orders placed **immediately** after entry in Thinkorswim — no exceptions
+- Bracket orders placed **immediately** after entry — stop and target set at time of entry
 - Never move stop loss wider after entry
 - Never average down into a losing position
+- Never hold through earnings
 
 **Portfolio Rules**
 - Maximum **5 trades open at any one time**
-- Avoid correlated sector exposure — open trades should come from different sectors
+- Maximum **1 trade per sector** — check open positions before entering
 - Never hold through earnings announcements
-- If a position has earnings within 7 days — exit before the announcement
+- Exit before earnings if announcement falls within 7 days of open position
 
 **Consecutive Loss Rule**
 After **5 consecutive stop-outs:**
@@ -106,7 +148,8 @@ After **5 consecutive stop-outs:**
 - **Never enter** in the first 30 minutes after open (9:30–10:00 AM EST)
 - **Never enter** in the last 30 minutes before close (3:30–4:00 PM EST)
 - Cleanest signals appear between **10:00 AM and 3:00 PM EST**
-- Scanner runs at: 10:05, 11:05, 12:05, 13:05, 14:05, 15:05 EST
+- All limit orders must be **Day Only** — no GTC orders
+- Cancel any unfilled limit order by **3:30 PM EST**
 
 ---
 
@@ -137,77 +180,76 @@ Only trade in the direction of the weekly trend.
 
 ---
 
-## Automation System
+## Technology Stack
 
-**Tool 1 — Computer Scanner (Google Colab)**
-- Run manually the night before or pre-market
-- Set DATE_FROM and DATE_TO at the top
-- Scans 318-ticker universe for EMA crosses
-- Grades all signals and filters to A and B only
-- Shows entry, stop, target, ATR, shares, VIX, earnings flag
-- Downloads one CSV for review
+**Signal Generation**
+- **Primary:** Thinkorswim Stock Hacker scanner — scans All Listed Stocks every 3-5 minutes
+- Scanner filters: EMA9 crosses above EMA21 (1H), price above SMA200 (Daily), ATR% ≥ 0.5% (Daily), RVol ≥ 0.7x (Daily), SwingΔ ≤ 5% (Daily), Price $5–$25
+- TOS is the source of truth for all EMA calculations — eliminates yfinance data inconsistency
+- Push notification to phone when new tickers pass all filters
 
-**Tool 2 — Phone Scanner (GitHub Actions + Telegram)**
-- Runs automatically — no manual action needed
-- Heartbeat at 9:50 AM EST — confirms system online
-- Scans at 10:05, 11:05, 12:05, 13:05, 14:05, 15:05 EST
-- One alert per ticker per day maximum
-- Combined message for multiple signals
-- Daily recap at 3:30 PM EST
-- Crash alert if scanner fails
-- Silent when VIX outside 15–25
-- Silent on market holidays
-- DST auto-adjusted — reminder sent on clock change days
-- Monthly universe validation on 1st of each month
+**Signal Grading**
+- Google Colab (SwingBot_Colab_Scanner_v6) — Cell 5.5
+- Reads tickers from Google Sheets Scanner tab (populated by Claude parsing TOS screenshot)
+- Calculates full grade, stop, target, shares, sector, earnings
+- Fires graded alert to Telegram
 
-**Alert Format:**
+**Signal Review Workflow**
+1. TOS scanner fires push alert
+2. Open TOS mobile → check watchlist columns (RVol, ATR%, SwingΔ%)
+3. Hard skip anything RED in columns
+4. Screenshot TOS watchlist → send to Claude
+5. Claude parses tickers, pre-screens, gives list
+6. Paste list into Google Sheets Scanner tab
+7. Run Colab Cell 5.5 → full graded alert fires to Telegram
+8. Pull 1H + Daily charts in TOS → upload to SwingBot Trade Review
+9. Review output → place limit order if TAKE
+
+**Chart Study (TOS)**
+- Study name: SwingBot_Study
+- EMA9 (green), EMA21 (yellow), SMA200 (red dashed)
+- On-chart labels: ATR, RVol, SwingΔ%, VIX, SMA200 status, EMA status
+- Signal arrows: green up on bullish cross, magenta down on bearish cross
+- Saved styles: SwingBot_1H and SwingBot_Daily
+
+**Watchlist Columns (TOS)**
+- RVol — relative volume vs 20-bar average, color coded
+- ATR$ — dollar ATR using Wilder's smoothing
+- ATR% — ATR as % of price, color coded
+- SwingΔ% — % below 20-bar swing high, color coded
+
+**Trade Journal**
+- URL: mcamtran.github.io/swingbot/SwingBot%20Journal%20Standalone.html
+- Add to home screen for app-like access
+- Reads and writes to Google Sheets RAW_DATA tab via Apps Script webhook
+- Entry: paste JSON from Claude → parse → confirm → save
+- Exit: select open trade → paste exit JSON → confirm → save
+
+**Dashboard**
+- Google Sheets DASHBOARD tab — auto-updates from RAW_DATA
+- Shows: P&L, win rate, expectancy, profit factor, R-multiple, progress to 50 trades
+- Breakdowns by signal grade, self grade, exit reason, sector
+
+**Alert Format (current):**
 ```
 🟢 SIGNAL ALERT — 10:05 AM EST
 Data as of: 10:00 AM EST
 ━━━━━━━━━━━━━━━━━━━━━
 CYRX | Grade B | Score 7/10
 Entry   : $10.45
-Stop    : $10.12
-Target  : $11.11
+Stop    : $10.12  (Entry − 1×ATR)
+Target  : $11.11  (Entry + 2×ATR)
 ATR     : $0.165
 Shares  : 21
+Sector  : Healthcare
+Rel Vol : 0.7x 🟢 Acceptable for this time
+Swing Δ : 1.4% below swing high
+Float   : 77.7M  |  Mkt Cap: $2726.6M
 VIX     : 18.4
 Earnings: NO
 ━━━━━━━━━━━━━━━━━━━━━
 1 signal found
 ```
-
-**Tool 3 — Backtest (Google Colab)**
-- Upload scanner CSV as input
-- Simulates stop, target, 10-day timeout
-- Results shown by grade and timeframe
-- Downloads one CSV with full trade details
-
-**Execution**
-- Trades manually executed in **Thinkorswim**
-- Bracket order template saved: stop 2×ATR, target 4×ATR
-- No broker API or automated execution
-
----
-
-## Technology Stack
-
-**Live (current)**
-- GitHub repository: github.com/mcamtran/swingbot
-- GitHub Actions: automated hourly scanning
-- Telegram Bot: @Signalme921crossBot
-- Data source: yfinance with retry logic
-- Manual execution: Thinkorswim
-
-**Universe management**
-- Source: TradingView screener export
-- Criteria: Price $5–$25, Volume 500K+, Above 200 SMA, US stocks
-- Refresh: Monthly on the 1st — upload new CSV to GitHub
-- Validation: Automatic check on upload with Telegram confirmation
-
-**Backtest and analysis**
-- Google Colab (Tool 1 and Tool 3)
-- Data source: yfinance (historical, no rate limit issues)
 
 ---
 
@@ -220,7 +262,26 @@ At the end of every month review these four questions:
 3. Which signals did I skip — should I have taken them?
 4. What market condition was I trading in (trending, choppy, high VIX)?
 
-Adjust grading weights only after reviewing a minimum of 50 trades.
+Adjust grading weights only after reviewing a minimum of 50 trades and rerunning the backtest with updated scoring.
+
+---
+
+## Key Decisions Made
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| ATR stop multiplier | 1× (changed from 2×) | Matches backtest best performer |
+| ATR target multiplier | 2× (changed from 4×) | R:R 2:1 confirmed by backtest |
+| Timeout rule | 10 days | Better P&L than 14 days |
+| Grade threshold | B minimum | Grade B 56% WR vs Grade A 25% WR |
+| VIX range | 15–25 | Confirmed by multiple backtests |
+| Trade cap | 5 open max | Balance between frequency and risk |
+| Bearish cross exit | Rejected | Cuts winners, -$917 P&L impact |
+| Data source | TOS native | Eliminates yfinance EMA inconsistency |
+| Entry type | Limit Day Only | Faded entry — never chase |
+| ATR% minimum | 1.0% | Below this stop too tight for noise |
+| Float minimum | 20M | Below this liquidity too thin |
+| Score reweighting | Parked | Needs backtest rerun first |
 
 ---
 
@@ -228,11 +289,21 @@ Adjust grading weights only after reviewing a minimum of 50 trades.
 
 | Date | Action |
 |---|---|
-| May 27, 2026 | Go live — paper trading first week |
-| June 3, 2026 | Switch to real money if paper trading confirms system |
+| May 27, 2026 | Go live — paper trading |
+| May 29, 2026 | TOS scanner built, journal deployed, dashboard built |
 | June 1, 2026 | First monthly universe refresh |
 | September 15, 2026 | Review 4H signal addition |
-| ~September 20, 2026 | Expected 50-trade milestone (5-cap, 10-day timeout) |
+| ~September 20, 2026 | Expected 50-trade milestone |
+
+---
+
+## Parked Items (review after 50 trades)
+
+- Score reweighting — remove auto-pass Q1/Q2 from denominator (needs backtest rerun first)
+- Float vs market cap floor — scaled by price tier
+- Win rate by setup type
+- Sector ETF alignment filter
+- 4H signals
 
 ---
 
@@ -270,6 +341,10 @@ The goal is not constant activity or prediction accuracy.
 
 > The system only works if you take every Grade B signal that qualifies. Cherry-picking adds bias and destroys the edge.
 
-> Check the heartbeat every morning at 9:50 AM. If it does not arrive, the scanner is down.
+> TOS is the source of truth. If TOS doesn't show the cross, the signal is not confirmed regardless of what Colab fired.
 
-> Update the ticker list on the 1st of every month. Takes 5 minutes and keeps the scanner accurate.
+> Place the limit order and walk away. If price comes back to you, you're in. If it doesn't, you missed it — that's fine.
+
+> A signal that fired after 3:30 PM is not a trade for today. It's a watchlist item for tomorrow if structure holds.
+
+> Check VIX before doing anything else. If it's outside 15–25, close Colab and go be a parent.
