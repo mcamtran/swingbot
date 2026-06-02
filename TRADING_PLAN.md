@@ -119,7 +119,7 @@ RVol means different things at different times of day. A 0.7x RVol at 9:45 AM is
 
 **Portfolio Rules**
 - Maximum **5 trades open at any one time**
-- Maximum **1 trade per sector** — check open positions before entering
+- Maximum **2 trade per sector** — check open positions before entering
 - Never hold through earnings announcements
 - Exit before earnings if announcement falls within 7 days of open position
 
