@@ -1,365 +1,76 @@
-/**
- * SwingBot Apps Script — v8
- * ─────────────────────────────────────────────────────────────
- * Changes from v7:
- *   + writeScanLog() — writes scan diagnostics to SCAN_LOG tab
- *   + doGet routing updated to handle action=scan_log
- *   All v7 trade journal logic (writeTrade, readTrades,
- *   buildDashboard, testConnection) preserved exactly.
- *
- * Deployment: Extensions → Apps Script → paste → Deploy as Web App
- *   Execute as: Me
- *   Who has access: Anyone
- * After deploy: copy new Web App URL → update HARDCODED_WEBHOOK
- *   in SwingBot_Journal_Standalone.html
- * ─────────────────────────────────────────────────────────────
- */
-
-// ── Sheet tab names ────────────────────────────────────────────
-var RAW_DATA_TAB  = 'RAW_DATA';
-var DASHBOARD_TAB = 'DASHBOARD';
-var SCAN_LOG_TAB  = 'SCAN_LOG';   // NEW in v8
-
-// ── CORS helper ────────────────────────────────────────────────
-function corsOutput(data) {
-  var output = ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-  return output;
-}
-
-// ══════════════════════════════════════════════════════════════
-// doGet — main entry point
-// Routes:
-//   ?action=read            → readTrades()
-//   ?data=JSON&action=scan_log → writeScanLog(data)  [NEW v8]
-//   ?data=JSON              → writeTrade(data)
-// ══════════════════════════════════════════════════════════════
-function doGet(e) {
-  try {
-    var params = e.parameter || {};
-    var action = params.action || '';
-    var raw    = params.data   || '';
-
-    // ── Read all trades ──────────────────────────────────────
-    if (action === 'read') {
-      return corsOutput(readTrades());
-    }
-
-    // ── Write scan log row (NEW v8) ──────────────────────────
-    if (action === 'scan_log' && raw) {
-      var data = JSON.parse(raw);
-      return corsOutput(writeScanLog(data));
-    }
-
-    // ── Write or update trade row ────────────────────────────
-    if (raw) {
-      var data = JSON.parse(raw);
-      return corsOutput(writeTrade(data));
-    }
-
-    // ── Test connection ──────────────────────────────────────
-    return corsOutput({ status: 'ok', message: 'SwingBot Apps Script v8 online' });
-
-  } catch (err) {
-    return corsOutput({ status: 'error', message: err.toString() });
+{
+ "nbformat": 4,
+ "nbformat_minor": 0,
+ "metadata": {
+  "colab": {
+   "provenance": []
+  },
+  "kernelspec": {
+   "name": "python3",
+   "display_name": "Python 3"
   }
-}
-
-// ══════════════════════════════════════════════════════════════
-// writeTrade — preserved exactly from v7
-// Appends new trade or updates existing row by Trade ID (col AJ)
-// ══════════════════════════════════════════════════════════════
-function writeTrade(data) {
-  try {
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(RAW_DATA_TAB);
-    if (!sheet) return { status: 'error', message: RAW_DATA_TAB + ' tab not found' };
-
-    var tradeId = data.id || '';
-
-    // ── Exit update: find existing row by Trade ID ────────────
-    if (data.direction === 'SELL' && tradeId) {
-      var allData = sheet.getDataRange().getValues();
-      for (var i = 1; i < allData.length; i++) {
-        if (allData[i][35] === tradeId) {  // col AJ = index 35
-          var row   = i + 1;
-          var entry = parseFloat(allData[i][6])  || 0;  // col G
-          var shares= parseFloat(allData[i][5])  || 0;  // col F
-          var exit  = parseFloat(data.exit_price || data.fill_price) || 0;
-          var pnl   = (exit - entry) * shares;
-          var pnlPct= entry > 0 ? ((exit - entry) / entry * 100) : 0;
-          var rMult = data.atr > 0 ? (pnl / (data.atr * shares)) : 0;
-          var entryDate = allData[i][1] ? new Date(allData[i][1]) : new Date();
-          var exitDate  = data.date ? new Date(data.date) : new Date();
-          var daysHeld  = Math.round((exitDate - entryDate) / (1000 * 60 * 60 * 24));
-
-          sheet.getRange(row, 10).setValue(exit);                          // J: Exit Price
-          sheet.getRange(row, 11).setValue(data.date || '');               // K: Exit Date
-          sheet.getRange(row, 12).setValue(data.exit_reason || '');        // L: Exit Reason
-          sheet.getRange(row, 18).setValue(Math.round(pnl * 100) / 100);  // R: P&L$
-          sheet.getRange(row, 19).setValue(Math.round(pnlPct * 100) / 100); // S: P&L%
-          sheet.getRange(row, 20).setValue(Math.round(rMult * 100) / 100); // T: R-Multiple
-          sheet.getRange(row, 21).setValue(daysHeld);                      // U: Days Held
-          sheet.getRange(row, 23).setValue(data.self_grade || '');         // W: Self Grade
-
-          // Color P&L cell
-          var pnlCell = sheet.getRange(row, 18);
-          pnlCell.setBackground(pnl >= 0 ? '#b7e1cd' : '#f4c7c3');
-
-          return { status: 'ok', action: 'exit_updated', row: row, pnl: Math.round(pnl * 100) / 100 };
-        }
-      }
-      return { status: 'error', message: 'Trade ID not found: ' + tradeId };
-    }
-
-    // ── Entry: append new row ─────────────────────────────────
-    var newId   = data.ticker + '_' + new Date().getTime();
-    var scores  = data.scores || [0,0,0,0,0,0,0,0,0,0];
-    var lastRow = sheet.getLastRow() + 1;
-    var tradeNum= lastRow - 1;  // row 1 is header
-
-    var rowData = [
-      tradeNum,                        // A: Trade#
-      data.date         || '',         // B: Date
-      data.ticker       || '',         // C: Ticker
-      data.sector       || '',         // D: Sector
-      data.direction    || 'BUY',      // E: Direction
-      data.shares       || '',         // F: Shares
-      data.fill_price   || '',         // G: Entry
-      data.stop         || '',         // H: Stop
-      data.target       || '',         // I: Target
-      '',                              // J: Exit Price (blank until exit)
-      '',                              // K: Exit Date
-      '',                              // L: Exit Reason
-      data.atr          || '',         // M: ATR
-      data.rel_vol      || '',         // N: Rel Vol
-      data.swing_delta  || '',         // O: Swing Delta%
-      data.float_m      || '',         // P: Float(M)
-      data.vix          || '',         // Q: VIX
-      '',                              // R: P&L$ (blank until exit)
-      '',                              // S: P&L% (blank until exit)
-      '',                              // T: R-Multiple (blank until exit)
-      '',                              // U: Days Held (blank until exit)
-      data.signal_grade || '',         // V: Signal Grade
-      '',                              // W: Self Grade (blank until exit)
-      scores[0] || 0,                  // X: Q1
-      scores[1] || 0,                  // Y: Q2
-      scores[2] || 0,                  // Z: Q3
-      scores[3] || 0,                  // AA: Q4
-      scores[4] || 0,                  // AB: Q5
-      scores[5] || 0,                  // AC: Q6
-      scores[6] || 0,                  // AD: Q7
-      scores[7] || 0,                  // AE: Q8
-      scores[8] || 0,                  // AF: Q9
-      scores[9] || 0,                  // AG: Q10
-      data.score        || '',         // AH: Score/10
-      data.notes        || '',         // AI: Notes
-      newId                            // AJ: Trade ID
-    ];
-
-    sheet.getRange(lastRow, 1, 1, rowData.length).setValues([rowData]);
-
-    return { status: 'ok', action: 'entry_added', row: lastRow, trade_id: newId };
-
-  } catch (err) {
-    return { status: 'error', message: err.toString() };
+ },
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "# 🟢 SwingBot — Colab Live Scanner v8\n**Runs one scan manually. Sends Grade A & B signals to Telegram.**\n\n### What's new in v8\n- **TOS Integration:** Last, SwingΔ%, ATR%, RVol, ATR$, %Change read directly from Google Sheets scanner tab (pasted from TOS screenshots)\n- **Faster:** yfinance no longer computes ATR, SwingΔ, RVol, or price — all from TOS\n- **Accurate:** TOS data is source of truth for all price-based filters\n- **Catalyst detection:** %Change > 8% flags potential news moves automatically\n- **yfinance only for:** Grade/Score (10Q), Float, Earnings, Sector\n\n### Google Sheets scanner tab format (paste after TOS screenshots)\n| A: Ticker | B: Last | C: SwingΔ% | D: ATR% | E: RVol | F: ATR$ | G: %Change |\n|-----------|---------|------------|---------|---------|---------|------------|\n| NOK | 16.85 | 1.5 | 6.08 | 1.13 | 1.024 | 2.55 |\n\n### How to use\n1. TOS scanner fires → send screenshots to Claude\n2. Claude pre-screens and gives you paste-ready rows (all 7 columns)\n3. Paste rows into Google Sheets → scanner tab from row 2\n4. Run **Cell 3 — Imports**, **Cell 4 — Functions** once per session\n5. Run **Cell 5 — TOS Scan** for each batch\n6. Run **Cell 6 — Heartbeat** at session start, **Cell 7 — Recap** at EOD\n\n> **VIX rule:** Silent if VIX outside 15–25\n> **Filters (Colab):** Grade A/B | Float ≥ 10M | No earnings within 7 days | ATR% ≥ 1.0%\n> **Filters (TOS pre-screen):** EMA cross | SMA200 | Price $5–$25 | SwingΔ ≤ 5% | ATR% ≥ 1%\n> **RVol:** Context only — check TOS column against SPY RVol benchmark"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 1 — SETTINGS  ← fill these in before running\n# ════════════════════════════════════════════════════════\n\nTELEGRAM_TOKEN  = '8985416938:AAFo3Yh-AwCfsLQLtDF2UAFikFK1dM92fiE'   # from @BotFather\nCHAT_ID         = '8834650652'             # your Telegram chat ID\n\n# ── Trade parameters (match your trading plan) ──────────\nPRICE_MIN       = 5.0\nPRICE_MAX       = 25.0\nVIX_MIN         = 15.0\nVIX_MAX         = 25.0\nRISK_PER_TRADE  = 7.0\nATR_STOP_MULT   = 1.0\nATR_TARGET_MULT = 2.0\nATR_PERIOD      = 14\nEARNINGS_DAYS   = 7\n\n# ── Signal quality filters ───────────────────────────────\nMIN_FLOAT_M     = 10.0   # Minimum float in millions\n\n# ── RVol thresholds (Option 3 — lowered Jun 2, 2026) ────\n# Used for pre-screen context only — chart review is final arbiter (Option 1)\n# Before 10:00 AM : 0.3x\n# 10:00–11:00 AM  : 0.4x  (was 0.5x)\n# 11:00 AM–1:00 PM: 0.5x  (was 0.7x)\n# 1:00–2:00 PM    : 0.7x  (was 1.0x)\n# After 2:00 PM   : 0.8x  (was 1.2x)\nRVOL_THRESHOLDS = {\n    'early'     : 0.3,   # before 10:00 AM\n    'mid_early' : 0.4,   # 10:00–11:00 AM\n    'mid'       : 0.5,   # 11:00 AM–1:00 PM\n    'mid_late'  : 0.7,   # 1:00–2:00 PM\n    'late'      : 0.8,   # after 2:00 PM\n}\n\n# ── SPY RVol benchmark (Option 2) ────────────────────────\n# Used to compute market-relative RVol: ticker_rvol / spy_rvol\n# Ticker passes if market_relative_rvol >= SPY_RVOL_MIN_RATIO\nSPY_RVOL_MIN_RATIO = 0.8   # ticker RVol must be >= 80% of SPY RVol\n\nprint('✅ Settings loaded.')"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ==============================================================\n# CELL 2 -- UNIVERSE + SECTORS\n# Edit UNIVERSE list and SECTOR_MAP dict directly here.\n# No file uploads needed.\n# ==============================================================\n\n# -- Your full ticker universe (edit freely) ---------------------------\nUNIVERSE = [\n    'ET', 'F', 'PCG', 'VG', 'KEY', 'VTRS', 'PR', 'PAA', 'KIM', 'PSLV',\n    'HST', 'DOC', 'AUR', 'FHN', 'WULF', 'AM', 'AES', 'LUMN', 'RIOT', 'ONB',\n    'AAL', 'CIFR', 'PRMB', 'LEVI', 'RIG', 'IBRX', 'VLY', 'NOV', 'CWAN', 'HR',\n    'SGHC', 'S', 'FNB', 'GTES', 'OSCR', 'MAC', 'FLG', 'ZGN', 'M', 'BGC',\n    'MARA', 'SBRA', 'GBTG', 'ZETA', 'PTEN', 'MDU', 'EBC', 'RELY', 'ONDS', 'WSC',\n    'TFSL', 'CRGY', 'LION', 'COLD', 'KC', 'CLSK', 'FULT', 'LBTYA', 'DNP', 'IRT',\n    'AMRX', 'FLNC', 'BNL', 'NVST', 'ARX', 'FBP', 'HIMX', 'CVBF', 'RUM', 'INFQ',\n    'BTDR', 'OGN', 'ERAS', 'RDW', 'GNW', 'APLE', 'KYIV', 'CC', 'BKD', 'GEO',\n    'SFNC', 'MPT', 'TXG', 'NN', 'DNLI', 'DBRG', 'RCUS', 'AKR', 'TNGX', 'WT',\n    'BANC', 'PFS', 'DYN', 'LFST', 'IHS', 'UE', 'ALMS', 'DHT', 'QUBT', 'CALY',\n    'SPNT', 'WTTR', 'UNIT', 'TALO', 'FA', 'VNET', 'BW', 'RLAY', 'FSLY', 'HUN',\n    'HOG', 'DFTX', 'IMNM', 'OSW', 'AESI', 'MNR', 'HE', 'UA', 'PK', 'SOC',\n    'AMPX', 'XIFR', 'PENN', 'TE', 'NEXT', 'POET', 'DRH', 'SLDE', 'ACHC', 'CXW',\n    'DHC', 'BCRX', 'CTOS', 'NVCR', 'PUMP', 'PBI', 'SEM', 'PCT', 'NWBI', 'FUN',\n    'TRVI', 'NTST', 'FLYW', 'LWLG', 'SHO', 'GNL', 'AUPH', 'PGNY', 'NEOG', 'NEXA',\n    'FCF', 'JBLU', 'AGRO', 'ARCO', 'NAC', 'NRIX', 'XPRO', 'TH', 'VRE', 'KRP',\n    'SFL', 'SNDX', 'MD', 'FIVN', 'BORR', 'EFC', 'PEB', 'SHLS', 'INVA', 'SGML',\n    'HLIT', 'BDJ', 'NVRI', 'STGW', 'CMPS', 'GLUE', 'ABCL', 'HOPE', 'TSHA', 'SATL',\n    'OPRA', 'XHR', 'VSTS', 'VIR', 'KW', 'DCH', 'NVAX', 'ECVT', 'AMLX', 'LAR',\n    'HLX', 'TRIN', 'RLJ', 'ARI', 'SLS', 'BCAX', 'AHCO', 'CSWC', 'TTI', 'HCSG',\n    'MRTN', 'LIND', 'CRML', 'TWO', 'NPKI', 'ACDC', 'CSIQ', 'PRA', 'ADTN', 'MUX',\n    'FTRE', 'UAMY', 'TROX', 'GILT', 'IART', 'SG', 'TK', 'AVNS', 'NAT', 'CDNA',\n    'DEC', 'HTLD', 'CIM', 'JBIO', 'GPRE', 'OCFC', 'HYLN', 'LPTH', 'CRVS', 'SVRA',\n    'PDM', 'KURA', 'HPK', 'CFFN', 'KODK', 'KOPN', 'LXU', 'AVR', 'NRGV', 'EVC',\n    'PSNL', 'DRTS', 'TALK', 'ANNX', 'ABX', 'CODI', 'AVTX', 'ARKO', 'MGTX', 'SPIR',\n    'CGEM', 'OMER', 'CRSR', 'WEST', 'UMAC', 'ADAM', 'ABSI', 'AURA', 'BVS', 'ASC',\n    'RLMD', 'CGNT', 'GRNT', 'MITK', 'GRPN', 'SXC', 'CYRX', 'DC', 'VELO', 'DSGN',\n    'INN', 'AHRT', 'BLMN', 'BZH', 'SLDB', 'CLYM', 'GPRK', 'ALOY', 'EGY', 'ZVRA',\n    'RYAM', 'CADL', 'INV', 'PACK', 'OIS', 'SRTA', 'KYTX', 'PANL', 'CRNC', 'OSPN',\n    'PUBM', 'ASPN', 'IMMX', 'STTK', 'BLZE', 'IMXI', 'LZM', 'CAL', 'OSS', 'SGMT',\n    'OPTX', 'VUZI', 'CCRN', 'ALMU', 'SIDU', 'GRRR', 'EOLS', 'MEI', 'CEPT', 'RILY',\n    'AIRS', 'PAYS', 'XPER', 'QUIK', 'SHMD', 'DUOT', 'DBI', 'ATOM', 'GSIT', 'TENX',\n    'RMAX', 'ABEO', 'BRUN', 'FNKO', 'LTRX', 'IMPP', 'CGEH', 'UNCY', 'MX', 'ARTV',\n    'TORO', 'TRT', 'SKLZ', 'QMCO', 'AMPG', 'BNAI', 'PSIG', 'CPSH', 'PIII', 'EDSA',\n    'CPIX', 'CUE', 'CLNN', 'IPWR', 'RDAC', 'ROLR', 'ASTI', 'FABC', 'AKTX', 'BTX',\n    'BCAT',\n]\n\n# Deduplicate + normalize\nUNIVERSE = [str(t).strip().upper().replace('.', '-') for t in UNIVERSE\n            if str(t).strip().replace('-','').isalpha()]\nUNIVERSE = list(dict.fromkeys(UNIVERSE))\nprint(f'\\u2705 Universe: {len(UNIVERSE)} tickers')\n\n# -- Sector map (all 351 tickers mapped) ------------------------------\nSECTOR_MAP = {\n    # Biotech\n    'BCRX': 'Healthcare',\n    'AURA': 'Biotech', 'BVS': 'Biotech', 'CGEH': 'Biotech', 'IMPP': 'Biotech', 'TXG': 'Biotech', 'UMAC': 'Biotech',\n    # Closed-End Fund\n    'DCH': 'Closed-End Fund', 'NAC': 'Closed-End Fund',\n    # Commodities\n    'PSLV': 'Commodities',\n    # Consumer\n    'AAL': 'Consumer', 'AGRO': 'Consumer', 'ARCO': 'Consumer', 'BLMN': 'Consumer', 'BRUN': 'Consumer', 'BZH': 'Consumer', 'CRSR': 'Consumer', 'DFTX': 'Consumer',\n    'F': 'Consumer', 'FNKO': 'Consumer', 'FUN': 'Consumer', 'GRPN': 'Consumer', 'HOG': 'Consumer', 'INN': 'Consumer', 'JBLU': 'Consumer', 'LEVI': 'Consumer',\n    'M': 'Consumer', 'OSCR': 'Consumer', 'OSW': 'Consumer', 'PENN': 'Consumer', 'SG': 'Consumer', 'SKLZ': 'Consumer', 'TH': 'Consumer', 'UA': 'Consumer',\n    'ZGN': 'Consumer',\n    # Crypto\n    'ACDC': 'Crypto', 'BNAI': 'Crypto', 'BTDR': 'Crypto', 'CIFR': 'Crypto', 'CLSK': 'Crypto', 'MARA': 'Crypto', 'RIOT': 'Crypto', 'WULF': 'Crypto',\n    # Energy\n    'AM': 'Energy', 'AMPX': 'Energy', 'ARX': 'Energy', 'BORR': 'Energy', 'CRGY': 'Energy', 'CSIQ': 'Energy', 'DEC': 'Energy', 'DHT': 'Energy',\n    'DYN': 'Energy', 'EGY': 'Energy', 'ET': 'Energy', 'GPRE': 'Energy', 'GPRK': 'Energy', 'HLX': 'Energy', 'HPK': 'Energy', 'KRP': 'Energy',\n    'NAT': 'Energy', 'NOV': 'Energy', 'OIS': 'Energy', 'PAA': 'Energy', 'PTEN': 'Energy', 'PUMP': 'Energy', 'RIG': 'Energy', 'SFL': 'Energy',\n    'TALO': 'Energy', 'TK': 'Energy', 'TTI': 'Energy', 'WTTR': 'Energy',\n    # Financials\n    'ARI': 'Financials', 'ARKO': 'Financials', 'BANC': 'Financials', 'BGC': 'Financials', 'CFFN': 'Financials', 'CIM': 'Financials', 'CODI': 'Financials', 'CSWC': 'Financials',\n    'CVBF': 'Financials', 'DBRG': 'Financials', 'DC': 'Financials', 'EBC': 'Financials', 'EFC': 'Financials', 'FA': 'Financials', 'FBP': 'Financials', 'FCF': 'Financials',\n    'FHN': 'Financials', 'FLG': 'Financials', 'FNB': 'Financials', 'FULT': 'Financials', 'GNW': 'Financials', 'HOPE': 'Financials', 'INV': 'Financials', 'KEY': 'Financials',\n    'LIND': 'Financials', 'LION': 'Financials', 'NWBI': 'Financials', 'OCFC': 'Financials', 'ONB': 'Financials', 'PFS': 'Financials', 'PRA': 'Financials', 'RELY': 'Financials',\n    'RILY': 'Financials', 'SFNC': 'Financials', 'TFSL': 'Financials', 'TRIN': 'Financials', 'TWO': 'Financials', 'VLY': 'Financials', 'WEST': 'Financials', 'WT': 'Financials',\n    # Healthcare\n    'ABCL': 'Healthcare', 'ABEO': 'Healthcare', 'ABSI': 'Healthcare', 'ACHC': 'Healthcare', 'AHCO': 'Healthcare', 'AHRT': 'Healthcare', 'AKTX': 'Healthcare', 'ALMS': 'Healthcare',\n    'AMLX': 'Healthcare', 'AMRX': 'Healthcare', 'ANNX': 'Healthcare', 'ARTV': 'Healthcare', 'AUPH': 'Healthcare', 'AVNS': 'Healthcare', 'AVTX': 'Healthcare', 'BCAT': 'Healthcare',\n    'BCAX': 'Healthcare', 'BKD': 'Healthcare', 'BTX': 'Healthcare', 'CADL': 'Healthcare', 'CALY': 'Healthcare', 'CCRN': 'Healthcare', 'CDNA': 'Healthcare', 'CEPT': 'Healthcare',\n    'CGEM': 'Healthcare', 'CLNN': 'Healthcare', 'CLYM': 'Healthcare', 'CMPS': 'Healthcare', 'CPIX': 'Healthcare', 'CRVS': 'Healthcare', 'CUE': 'Healthcare', 'CYRX': 'Healthcare',\n    'DHC': 'Healthcare', 'DNLI': 'Healthcare', 'EDSA': 'Healthcare', 'EOLS': 'Healthcare', 'ERAS': 'Healthcare', 'GLUE': 'Healthcare', 'HCSG': 'Healthcare', 'IBRX': 'Healthcare',\n    'IMMX': 'Healthcare', 'IMNM': 'Healthcare', 'INVA': 'Healthcare', 'JBIO': 'Healthcare', 'KURA': 'Healthcare', 'KYTX': 'Healthcare', 'LFST': 'Healthcare', 'LWLG': 'Healthcare',\n    'MD': 'Healthcare', 'MGTX': 'Healthcare', 'NEOG': 'Healthcare', 'NRIX': 'Healthcare', 'NVAX': 'Healthcare', 'NVCR': 'Healthcare', 'NVST': 'Healthcare', 'OGN': 'Healthcare',\n    'OMER': 'Healthcare', 'OPTX': 'Healthcare', 'PGNY': 'Healthcare', 'PRMB': 'Healthcare', 'PSNL': 'Healthcare', 'RCUS': 'Healthcare', 'RLAY': 'Healthcare', 'RLMD': 'Healthcare',\n    'SEM': 'Healthcare', 'SLDB': 'Healthcare', 'SLS': 'Healthcare', 'SNDX': 'Healthcare', 'SPNT': 'Healthcare', 'SRTA': 'Healthcare', 'STTK': 'Healthcare', 'SVRA': 'Healthcare',\n    'TENX': 'Healthcare', 'TNGX': 'Healthcare', 'TRVI': 'Healthcare', 'TSHA': 'Healthcare', 'UNCY': 'Healthcare', 'VIR': 'Healthcare', 'ZVRA': 'Healthcare',\n    # Industrials\n    'AESI': 'Industrials', 'AIRS': 'Industrials', 'AMPG': 'Industrials', 'ASC': 'Industrials', 'ASPN': 'Industrials', 'BW': 'Industrials', 'CAL': 'Industrials', 'CC': 'Industrials',\n    'CTOS': 'Industrials', 'DBI': 'Industrials', 'GRNT': 'Industrials', 'GTES': 'Industrials', 'HTLD': 'Industrials', 'HUN': 'Industrials', 'KALU': 'Industrials', 'LXU': 'Industrials',\n    'MDU': 'Industrials', 'MEI': 'Industrials', 'MRTN': 'Industrials', 'MUX': 'Industrials', 'NEXA': 'Industrials', 'NN': 'Industrials', 'NVRI': 'Industrials', 'OSS': 'Industrials',\n    'PACK': 'Industrials', 'PANL': 'Industrials', 'PBI': 'Industrials', 'PCT': 'Industrials', 'RYAM': 'Industrials', 'SGML': 'Industrials', 'SGMT': 'Industrials', 'SHLS': 'Industrials',\n    'SIDU': 'Industrials', 'SXC': 'Industrials', 'TORO': 'Industrials', 'TROX': 'Industrials', 'TRT': 'Industrials', 'UAMY': 'Industrials', 'WSC': 'Industrials', 'XPRO': 'Industrials',\n    # Materials\n    'ABX': 'Materials', 'AVR': 'Materials', 'CRML': 'Materials', 'ECVT': 'Materials', 'GILT': 'Materials', 'IART': 'Materials', 'KODK': 'Materials', 'LZM': 'Materials',\n    'NPKI': 'Materials', 'PR': 'Materials', 'VTRS': 'Materials',\n    # REITs\n    'AKR': 'REITs', 'APLE': 'REITs', 'BDJ': 'REITs', 'BNL': 'REITs', 'COLD': 'REITs', 'DNP': 'REITs', 'DOC': 'REITs', 'DRH': 'REITs',\n    'GNL': 'REITs', 'HR': 'REITs', 'HST': 'REITs', 'IRT': 'REITs', 'KIM': 'REITs', 'KW': 'REITs', 'MAC': 'REITs', 'MNR': 'REITs',\n    'MPT': 'REITs', 'NTST': 'REITs', 'PDM': 'REITs', 'PEB': 'REITs', 'PK': 'REITs', 'RLJ': 'REITs', 'RMAX': 'REITs', 'SBRA': 'REITs',\n    'SHO': 'REITs', 'UE': 'REITs', 'VRE': 'REITs', 'XHR': 'REITs',\n    # Special\n    'KYIV': 'Special', 'LAR': 'Special', 'XIFR': 'Special',\n    # Technology\n    'ADAM': 'Technology', 'ADTN': 'Technology', 'ALMU': 'Technology', 'ALOY': 'Technology', 'ASTI': 'Technology', 'ATOM': 'Technology', 'AUR': 'Technology', 'BLZE': 'Technology',\n    'CGNT': 'Technology', 'CPSH': 'Technology', 'CRNC': 'Technology', 'CWAN': 'Technology', 'DSGN': 'Technology', 'DUOT': 'Technology', 'FABC': 'Technology', 'FIVN': 'Technology',\n    'FLYW': 'Technology', 'FSLY': 'Technology', 'FTRE': 'Technology', 'GBTG': 'Technology', 'GRRR': 'Technology', 'GSIT': 'Technology', 'HIMX': 'Technology', 'HLIT': 'Technology',\n    'HYLN': 'Technology', 'IMXI': 'Technology', 'INFQ': 'Technology', 'IPWR': 'Technology', 'KC': 'Technology', 'KOPN': 'Technology', 'LBTYA': 'Technology', 'LPTH': 'Technology',\n    'LTRX': 'Technology', 'MITK': 'Technology', 'MX': 'Technology', 'ONDS': 'Technology', 'OPRA': 'Technology', 'OSPN': 'Technology', 'PAYS': 'Technology', 'PIII': 'Technology',\n    'POET': 'Technology', 'PSIG': 'Technology', 'PUBM': 'Technology', 'QMCO': 'Technology', 'QUBT': 'Technology', 'QUIK': 'Technology', 'RDAC': 'Technology', 'RDW': 'Technology',\n    'ROLR': 'Technology', 'S': 'Technology', 'SATL': 'Technology', 'SGHC': 'Technology', 'SHMD': 'Technology', 'SLDE': 'Technology', 'SOC': 'Technology', 'SPIR': 'Technology',\n    'STGW': 'Technology', 'VELO': 'Technology', 'VSTS': 'Technology', 'VUZI': 'Technology', 'XPER': 'Technology', 'ZETA': 'Technology',\n    # Telecom\n    'DRTS': 'Telecom', 'IHS': 'Telecom', 'RUM': 'Telecom', 'TALK': 'Telecom', 'VG': 'Telecom', 'VNET': 'Telecom',\n    # Utilities\n    'AES': 'Utilities', 'CXW': 'Utilities', 'EVC': 'Utilities', 'FLNC': 'Utilities', 'GEO': 'Utilities', 'HE': 'Utilities', 'LUMN': 'Utilities', 'NEXT': 'Utilities',\n    'NRGV': 'Utilities', 'PCG': 'Utilities', 'TE': 'Utilities', 'UNIT': 'Utilities',\n\n    # Additional tickers identified May 29, 2026\n    'SWBI': 'Consumer',       # Smith & Wesson\n    'JMSB': 'Financials',     # John Marshall Bank\n    'GUT' : 'CEF',            # Gabelli Utility Trust\n    'AOD' : 'CEF',            # Aberdeen Total Dynamic Dividend\n    'WT'  : 'Financials',     # WisdomTree Investments\n    'FFIC': 'Financials',     # Flushing Financial\n    'NMR' : 'Financials',     # Nomura Holdings\n    'KRP' : 'Energy',         # Kimbell Royalty Partners\n    'LILA': 'Telecom',        # Liberty Latin America\n    'SVRA': 'Healthcare',     # Savara Inc\n    'REPL': 'Healthcare',     # Replimune Group\n    'GHRS': 'Healthcare',     # GH Research\n    'BDIMF': 'Materials',     # Black Diamond Group\n    'OXLCN': 'Financials',    # Oxford Lane Capital\n    'SBFG': 'Financials',     # SB Financial Group\n    'BCX' : 'Materials',      # BlackRock Resources\n    'GJT' : 'Financials',     # Strats SM Trust\n}\nprint(f'\\u2705 Sectors mapped: {len(SECTOR_MAP)}')\n"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 3 — INSTALL & IMPORTS  (run once per session)\n# ════════════════════════════════════════════════════════\n\nimport subprocess\nsubprocess.run(['pip', 'install', 'yfinance==0.2.66', 'pandas', 'numpy', 'pytz', '-q'])\n\nimport json, time, urllib.request, warnings\nimport pandas as pd\nfrom datetime import datetime, date, timedelta\nimport pytz\nimport numpy as np\nimport yfinance as yf\nwarnings.filterwarnings('ignore')\npd.set_option('future.no_silent_downcasting', True)\n\nEST = pytz.timezone('America/New_York')\n\n# Session-level dedup — resets when you restart runtime\nALERTED_TODAY = {}\n\n# ── US Market Holidays 2026 ──────────────────────────────\nMARKET_HOLIDAYS = {\n    date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16),\n    date(2026, 4, 3), date(2026, 5, 25), date(2026, 7, 3),\n    date(2026, 9, 7), date(2026, 11, 26), date(2026, 12, 25),\n}\n\nprint('✅ Imports done. yfinance:', yf.__version__)"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 4 — CORE FUNCTIONS  (run once per session)\n# v8: RVol removed, ticker info merged into single call\n# ════════════════════════════════════════════════════════\n\n# ── Telegram ────────────────────────────────────────────\ndef send_telegram(text):\n    url  = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'\n    data = json.dumps({'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'HTML'}).encode()\n    for attempt in range(3):\n        try:\n            req = urllib.request.Request(url, data=data,\n                                         headers={'Content-Type': 'application/json'})\n            with urllib.request.urlopen(req, timeout=10) as r:\n                result = json.loads(r.read())\n                if result.get('ok'):\n                    return True\n        except Exception as e:\n            if attempt < 2: time.sleep(2)\n    print(f'  ⚠️  Telegram send failed after 3 attempts')\n    return False\n\n# ── Helpers ──────────────────────────────────────────────\ndef get_est_time():\n    return datetime.now(EST)\n\ndef fetch_with_retry(func, retries=3, delay=5):\n    for attempt in range(retries):\n        try:\n            result = func()\n            if result is not None and not (hasattr(result, 'empty') and result.empty):\n                return result\n        except Exception:\n            pass\n        if attempt < retries - 1:\n            time.sleep(delay)\n    return None\n\n# ── VIX ──────────────────────────────────────────────────\ndef get_vix():\n    try:\n        def fetch():\n            v = yf.download('^VIX', period='5d', interval='1d',\n                            progress=False, auto_adjust=True)\n            if v.empty: return None\n            if v.index.tz is not None: v.index = v.index.tz_localize(None)\n            return float(v['Close'].dropna().iloc[-1])\n        return fetch_with_retry(fetch)\n    except:\n        return None\n\n# ── SPY RVol (Option 2 — market-relative benchmark) ──────\ndef get_spy_rvol():\n    \"\"\"\n    Fetches SPY's current RVol as market baseline.\n    Returns ratio of today's volume vs 20-day average.\n    Used to compute market-relative RVol for each ticker.\n    \"\"\"\n    try:\n        end   = date.today() + timedelta(days=1)\n        start = date.today() - timedelta(days=30)\n        spy   = fetch_with_retry(lambda: yf.download(\n            'SPY', start=start.strftime('%Y-%m-%d'),\n            end=end.strftime('%Y-%m-%d'),\n            interval='1d', progress=False, auto_adjust=True\n        ))\n        if spy is None or spy.empty: return None\n        if spy.index.tz is not None:\n            spy.index = spy.index.tz_convert('America/New_York').tz_localize(None)\n        vol = spy['Volume'].dropna()\n        if len(vol) < 2: return None\n        today_vol = float(vol.iloc[-1])\n        avg_vol   = float(vol.iloc[:-1].tail(20).mean())\n        if avg_vol <= 0: return None\n        return round(today_vol / avg_vol, 2)\n    except:\n        return None\n\n# ── Time-adjusted RVol threshold ─────────────────────────\ndef get_rvol_threshold():\n    \"\"\"Returns time-adjusted RVol threshold from Cell 1 settings.\"\"\"\n    now  = get_est_time()\n    hour = now.hour\n    minute = now.minute\n    t = hour * 100 + minute\n    if   t < 1000: return RVOL_THRESHOLDS['early']\n    elif t < 1100: return RVOL_THRESHOLDS['mid_early']\n    elif t < 1300: return RVOL_THRESHOLDS['mid']\n    elif t < 1400: return RVOL_THRESHOLDS['mid_late']\n    else:          return RVOL_THRESHOLDS['late']\n\n\n# ── 1H data ──────────────────────────────────────────────\ndef get_hourly(tickers):\n    try:\n        end   = date.today() + timedelta(days=1)\n        start = date.today() - timedelta(days=5)\n        raw   = fetch_with_retry(lambda: yf.download(\n            tickers, start=start.strftime('%Y-%m-%d'),\n            end=end.strftime('%Y-%m-%d'),\n            interval='1h', progress=False, auto_adjust=True\n        ))\n        if raw is None or raw.empty: return None\n        if raw.index.tz is not None:\n            raw.index = raw.index.tz_convert('America/New_York').tz_localize(None)\n        return raw\n    except:\n        return None\n\n# ── Daily bars (prices + SMA200 + grading bars) ──────────\n# Single download replaces the old get_daily_close() call.\n# Returns raw DataFrame — prices and SMA200 extracted inline.\ndef get_daily_raw(tickers):\n    try:\n        end   = date.today()\n        start = end - timedelta(days=300)\n        raw   = fetch_with_retry(lambda: yf.download(\n            tickers, start=start.strftime('%Y-%m-%d'),\n            end=end.strftime('%Y-%m-%d'),\n            interval='1d', progress=False, auto_adjust=True\n        ))\n        if raw is None or raw.empty: return None\n        if raw.index.tz is not None:\n            raw.index = raw.index.tz_convert('America/New_York').tz_localize(None)\n        return raw\n    except:\n        return None\n\ndef get_price_and_sma(ticker, daily_raw):\n    \"\"\"Extract current price and SMA200 from daily_raw.\"\"\"\n    try:\n        close_df = daily_raw['Close']\n        if isinstance(close_df, pd.Series):\n            close_df = close_df.to_frame(name=ticker)\n        if ticker not in close_df.columns: return None, None\n        s = close_df[ticker].dropna()\n        if s.empty: return None, None\n        price = float(s.iloc[-1])\n        sma   = s.rolling(200, min_periods=50).mean().dropna()\n        sma200 = float(sma.iloc[-1]) if not sma.empty else None\n        return price, sma200\n    except:\n        return None, None\n\n# ── Daily bars for grading ───────────────────────────────\ndef get_bars(ticker, daily_raw):\n    try:\n        close_df  = daily_raw['Close']\n        open_df   = daily_raw['Open']\n        high_df   = daily_raw['High']\n        low_df    = daily_raw['Low']\n        volume_df = daily_raw['Volume']\n        if isinstance(close_df, pd.Series):\n            close_df  = close_df.to_frame(name=ticker)\n            open_df   = open_df.to_frame(name=ticker)\n            high_df   = high_df.to_frame(name=ticker)\n            low_df    = low_df.to_frame(name=ticker)\n            volume_df = volume_df.to_frame(name=ticker)\n        if ticker not in close_df.columns: return None\n        df = pd.DataFrame({\n            'open'  : open_df[ticker].dropna(),\n            'high'  : high_df[ticker].dropna(),\n            'low'   : low_df[ticker].dropna(),\n            'close' : close_df[ticker].dropna(),\n            'volume': volume_df[ticker].dropna(),\n        }).tail(60)\n        return df if len(df) >= 5 else None\n    except:\n        return None\n\n# ── Merged ticker info — one call per ticker ─────────────\n# Replaces get_float_mktcap(), check_earnings(), sector fallback.\n# Single yf.Ticker(ticker) fetch extracts all 4 fields.\ndef get_ticker_info(ticker):\n    \"\"\"\n    Returns: float_m, mktcap_m, has_earnings, sector\n    One yf.Ticker() call replaces 3 separate calls.\n    \"\"\"\n    try:\n        t    = yf.Ticker(ticker)\n        info = t.info or {}\n\n        # Float + Market Cap\n        flt  = info.get('floatShares') or info.get('impliedSharesOutstanding')\n        mkt  = info.get('marketCap')\n        float_m  = round(flt/1e6, 1) if flt else None\n        mktcap_m = round(mkt/1e6, 1) if mkt else None\n\n        # Sector\n        sector = info.get('sector') or info.get('industryDisp') or None\n\n        # Earnings within 7 days\n        has_earnings = False\n        try:\n            cal = t.calendar\n            if cal is not None and not (hasattr(cal, 'empty') and cal.empty):\n                if isinstance(cal, pd.DataFrame):\n                    if 'Earnings Date' in cal.index:\n                        earn = pd.Timestamp(cal.loc['Earnings Date'].iloc[0])\n                    elif 'Earnings Date' in cal.columns:\n                        earn = pd.Timestamp(cal['Earnings Date'].iloc[0])\n                    else:\n                        earn = None\n                    if earn is not None:\n                        earn = earn.tz_localize(None) if earn.tzinfo else earn\n                        diff = (earn - pd.Timestamp(date.today())).days\n                        has_earnings = 0 <= diff <= EARNINGS_DAYS\n        except:\n            pass\n\n        return float_m, mktcap_m, has_earnings, sector\n\n    except:\n        return None, None, False, None\n\n# ── Grading (10-question checklist) ─────────────────────\ndef grade_signal(bars, price, vix):\n    if bars is None:\n        return 2, 'D', [1,1,0,0,0,0,0,0,0,0]\n    scores = []\n    scores.append(1)  # Q1 — EMA cross confirmed (auto-pass)\n    scores.append(1)  # Q2 — Above 200 SMA (auto-pass)\n    try:\n        e10 = bars['close'].ewm(span=10, adjust=False).mean()\n        e20 = bars['close'].ewm(span=20, adjust=False).mean()\n        c3  = bars['close'].iloc[-3:].values\n        scores.append(1 if all(c3 > e10.iloc[-3:].values) and\n                          all(c3 > e20.iloc[-3:].values) else 0)\n    except: scores.append(0)\n    try:\n        if len(bars) >= 20:\n            h,l,c = bars['high'], bars['low'], bars['close']\n            tr  = pd.concat([h-l,(h-c.shift(1)).abs(),(l-c.shift(1)).abs()],axis=1).max(axis=1)\n            up  = h.diff(); dn = -l.diff()\n            pdm = up.where((up>dn)&(up>0), 0.0)\n            ndm = dn.where((dn>up)&(dn>0), 0.0)\n            a14 = tr.rolling(14).mean()\n            pdi = 100*pdm.rolling(14).mean()/a14\n            ndi = 100*ndm.rolling(14).mean()/a14\n            dx  = 100*(pdi-ndi).abs()/(pdi+ndi)\n            adx = dx.rolling(14).mean()\n            scores.append(1 if float(adx.iloc[-1]) > 20 else 0)\n        else: scores.append(0)\n    except: scores.append(0)\n    try:\n        sh = bars.tail(20)['high'].max()\n        sl = bars.tail(20)['low'].min()\n        scores.append(1 if (abs(price-sh)/price<=0.03 or\n                            abs(price-sl)/price<=0.03) else 0)\n    except: scores.append(0)\n    scores.append(1 if vix and VIX_MIN <= float(vix) <= VIX_MAX else 0)\n    try:\n        last = bars.iloc[-1]\n        body = abs(last['close']-last['open'])\n        rng  = last['high']-last['low']\n        scores.append(1 if rng>0 and body/rng>=0.5 and last['close']>last['open'] else 0)\n    except: scores.append(0)\n    try:\n        e9  = bars['close'].ewm(span=9,  adjust=False).mean()\n        e21 = bars['close'].ewm(span=21, adjust=False).mean()\n        scores.append(1 if float(e9.iloc[-1]) > float(e21.iloc[-1]) else 0)\n    except: scores.append(0)\n    try:\n        if len(bars) >= 14:\n            tr  = pd.concat([bars['high']-bars['low'],\n                             (bars['high']-bars['close'].shift(1)).abs(),\n                             (bars['low'] -bars['close'].shift(1)).abs()],axis=1).max(axis=1)\n            atr = float(tr.rolling(14).mean().iloc[-1])\n            sl  = float(bars['low'].tail(10).min())\n            scores.append(1 if (price-2*atr) <= sl <= price else 0)\n        else: scores.append(0)\n    except: scores.append(0)\n    try:\n        avg = bars['volume'].tail(21).iloc[:-1].mean()\n        scores.append(1 if avg>0 and float(bars['volume'].iloc[-1])>=1.5*avg else 0)\n    except: scores.append(0)\n\n    total = sum(scores)\n    grade = 'A' if total>=9 else 'B' if total>=7 else 'C' if total>=5 else 'D'\n    return total, grade, scores\n\n# ── ATR ──────────────────────────────────────────────────\ndef calc_atr(bars):\n    try:\n        if bars is None or len(bars) < ATR_PERIOD: return None\n        tr = pd.concat([\n            bars['high']-bars['low'],\n            (bars['high']-bars['close'].shift(1)).abs(),\n            (bars['low'] -bars['close'].shift(1)).abs()\n        ], axis=1).max(axis=1)\n        return float(tr.rolling(ATR_PERIOD).mean().iloc[-1])\n    except:\n        return None\n\n# ── EMA cross detection ──────────────────────────────────\ndef has_cross(series):\n    ema9  = series.ewm(span=9,  adjust=False).mean()\n    ema21 = series.ewm(span=21, adjust=False).mean()\n    fast  = (ema9 > ema21).astype(bool)\n    prev  = fast.shift(1).fillna(False).astype(bool)\n    return fast & ~prev\n\n# ── Distance from recent swing high (%) ─────────────────\ndef get_dist_from_swing_high(bars, price):\n    try:\n        if bars is None or len(bars) < 5: return None\n        swing_high = float(bars.tail(20)['high'].max())\n        if swing_high <= 0: return None\n        return round((swing_high - price) / swing_high * 100, 1)\n    except:\n        return None\n\n# ── Alert formatter ──────────────────────────────────────\ndef format_alert(signals, scan_time, data_time, spy_rvol=None, rvol_threshold=None):\n    now_str  = scan_time.strftime('%I:%M %p EST')\n    if data_time:\n        data_str  = data_time.strftime('%I:%M %p EST')\n        lag_mins  = int((scan_time.replace(tzinfo=None) - data_time).total_seconds() / 60)\n        lag_str   = f' ({lag_mins}m old)' if lag_mins > 15 else ''\n        data_line = f'Data as of: {data_str}{lag_str}'\n    else:\n        data_line = 'Data as of: Unknown'\n    lines = [\n        f'\\U0001f7e2 <b>SIGNAL ALERT \\u2014 {now_str}</b>',\n        data_line,\n        '\\u2501'*21\n    ]\n    for s in signals:\n        dist_sh  = s.get('dist_swing_high')\n        flt      = s.get('float_m')\n        mkt      = s.get('mktcap_m')\n        atr_pct  = round(s['atr'] / s['entry'] * 100, 2) if s['entry'] > 0 else 'N/A'\n        lines += [\n            f'<b>{s[\"ticker\"]}</b> | Grade {s[\"grade\"]} | Score {s[\"score\"]}/10',\n            f'Entry   : ${s[\"entry\"]:.2f}',\n            f'Stop    : ${s[\"stop\"]:.2f}',\n            f'Target  : ${s[\"target\"]:.2f}',\n            f'ATR     : ${s[\"atr\"]:.3f}  ({atr_pct}% of price)',\n            f'Shares  : {s[\"shares\"]}',\n            f'Sector  : {s.get(\"sector\", \"N/A\")}',\n            f'Swing \\u0394 : {str(dist_sh)+\"% below swing high\" if dist_sh is not None else \"N/A\"}',\n            f'Float   : {str(flt)+\"M\" if flt is not None else \"N/A\"}'\n            f'  |  Mkt Cap: {\"$\"+str(mkt)+\"M\" if mkt is not None else \"N/A\"}',\n            f'VIX     : {s[\"vix\"]}',\n            f'Earnings: {s[\"earnings\"]}',\n            '\\u2501'*21\n        ]\n    # SPY RVol context in alert\n    spy_str = f'{spy_rvol}x' if spy_rvol else 'N/A'\n    thresh_str = f'{rvol_threshold}x' if rvol_threshold else 'N/A'\n    lines.append(f'\\u26a0\\ufe0f RVol: Check TOS | SPY RVol: {spy_str} | Threshold: {thresh_str}')\n    lines.append(f'{len(signals)} signal{\"s\" if len(signals)>1 else \"\"} found')\n    return '\\n'.join(lines)\n\n# ── Scan log (console only) ──────────────────────────────\ndef log_to_scan_log(sheet_id, scan_time, signals_found, skipped_log):\n    \"\"\"\n    Prints scan diagnostics to Colab console.\n    Also writes to SCAN_LOG tab via Apps Script with full TOS data.\n    \"\"\"\n    APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwr2ba2kh_kcaq5DUTx1K7_86hmMKVBWCPwCOQ8AaTCza31sNnsu6P5ng9EjQIl5sPfHA/exec'\n    import json as _json, urllib.parse as _urlparse\n\n    now_str = scan_time.strftime('%Y-%m-%d %H:%M EST')\n    print(f'\\n  📋 SCAN LOG — {now_str}')\n    print(f'  {\"─\"*48}')\n\n    if signals_found:\n        print(f'  SIGNALS ({len(signals_found)}):')\n        for s in signals_found:\n            print(f'    ✅ {s[\"ticker\"]} — Grade {s[\"grade\"]} | Score {s[\"score\"]}/10 | ATR$ ${s.get(\"atr\",\"?\")} | ATR% {s.get(\"atr_pct\",\"?\")}% | SwingΔ {s.get(\"dist_swing_high\",\"?\")}% | RVol {s.get(\"rvol\",\"?\")}x')\n\n    if skipped_log:\n        print(f'  SKIPPED ({len(skipped_log)}):')\n        for s in skipped_log:\n            print(f'    ⛔ {s[\"ticker\"]} — {s[\"reason\"]}')\n\n    print(f'  {\"─\"*48}')\n\n    # Write to SCAN_LOG tab via Apps Script\n    rows = []\n\n    for s in signals_found:\n        rows.append({\n            'action'     : 'scan_log',\n            'timestamp'  : now_str,\n            'ticker'     : s['ticker'],\n            'result'     : 'SIGNAL',\n            'reason'     : f'Grade {s[\"grade\"]} | Score {s[\"score\"]}/10',\n            'score'      : s.get('score', ''),\n            'grade'      : s.get('grade', ''),\n            'atr_pct'    : s.get('atr_pct', ''),\n            'swing_delta': s.get('dist_swing_high', ''),\n            'rvol'       : s.get('rvol', ''),\n            'atr_dollar' : s.get('atr', ''),\n            'pct_change' : s.get('pct_change', ''),\n            'last'       : s.get('entry', ''),\n            'spy_rvol'   : s.get('spy_rvol', ''),\n        })\n\n    for entry in skipped_log:\n        rows.append({\n            'action'     : 'scan_log',\n            'timestamp'  : now_str,\n            'ticker'     : entry['ticker'],\n            'result'     : 'SKIP',\n            'reason'     : entry['reason'],\n            'score'      : entry.get('score', ''),\n            'grade'      : entry.get('grade', ''),\n            'atr_pct'    : entry.get('atr_pct', ''),\n            'swing_delta': entry.get('swing_delta', ''),\n            'rvol'       : entry.get('rvol', ''),\n            'atr_dollar' : entry.get('atr_dollar', ''),\n            'pct_change' : entry.get('pct_change', ''),\n            'last'       : entry.get('last', ''),\n            'spy_rvol'   : '',\n        })\n\n    success = 0\n    for row in rows:\n        try:\n            params = _urlparse.urlencode({'data': _json.dumps(row)}) + '&action=scan_log'\n            url    = f'{APPS_SCRIPT_URL}?{params}'\n            with urllib.request.urlopen(url, timeout=10) as r:\n                success += 1\n        except Exception as e:\n            print(f'    ⚠️  SCAN_LOG write failed for {row[\"ticker\"]}: {e}')\n\n    if rows:\n        print(f'  📊 SCAN_LOG: {success}/{len(rows)} rows written to Sheets')\n\nprint('✅ Cell 4 loaded. RVol removed. Ticker info merged. Ready.')\n"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 5 — TOS WATCHLIST SCAN  (run each batch)\n# v8: Reads TOS data from Google Sheets, uses TOS as source of truth\n# ════════════════════════════════════════════════════════\n#\n# GOOGLE SHEETS SCANNER TAB FORMAT:\n# Row 1 = headers (auto-ignored)\n# Row 2+ = one ticker per row, 7 columns:\n# A=Ticker | B=Last | C=SwingΔ% | D=ATR% | E=RVol | F=ATR$ | G=%Change\n#\n# HOW TO POPULATE:\n# 1. TOS fires alert → send 2 screenshots to Claude\n# 2. Claude pre-screens and returns paste-ready rows\n# 3. Paste into Sheets scanner tab from A2\n# ════════════════════════════════════════════════════════\n\nSHEET_ID = \"1wxgzlC4NnjOf42RaD-I67IFX61VhRDPoGe5UNZMcnRE\"\nTAB_NAME = \"scanner\"\n\n# ── Read TOS data from Google Sheets ─────────────────────\ndef read_tos_data_from_sheet(sheet_id, tab_name):\n    \"\"\"\n    Reads all 7 TOS columns from the scanner tab.\n    Returns dict: {TICKER: {last, swing_delta, atr_pct, rvol, atr_dollar, pct_change}}\n    Skips header row and blank rows automatically.\n    \"\"\"\n    from io import StringIO\n    url = (\n        f\"https://docs.google.com/spreadsheets/d/{sheet_id}\"\n        f\"/gviz/tq?tqx=out:csv&sheet={tab_name}\"\n    )\n    try:\n        with urllib.request.urlopen(url, timeout=10) as r:\n            content = r.read().decode(\"utf-8\")\n        df = pd.read_csv(StringIO(content), header=0)\n\n        # Expected columns: Ticker, Last, SwingΔ%, ATR%, RVol, ATR$, %Change\n        # Handle both named headers and positional (in case headers differ)\n        col_count = len(df.columns)\n        tos_data  = {}\n\n        for _, row in df.iterrows():\n            try:\n                ticker = str(row.iloc[0]).strip().upper()\n                if not ticker or ticker in ('TICKER', 'SYMBOL', 'NAN', ''):\n                    continue\n\n                def safe_float(val, default=None):\n                    try:\n                        v = str(val).strip().replace('%','').replace(',','')\n                        return float(v) if v not in ('', 'nan', 'NaN', 'N/A') else default\n                    except:\n                        return default\n\n                tos_data[ticker] = {\n                    'last'        : safe_float(row.iloc[1] if col_count > 1 else None),\n                    'swing_delta' : safe_float(row.iloc[2] if col_count > 2 else None),\n                    'atr_pct'     : safe_float(row.iloc[3] if col_count > 3 else None),\n                    'rvol'        : safe_float(row.iloc[4] if col_count > 4 else None),\n                    'atr_dollar'  : safe_float(row.iloc[5] if col_count > 5 else None),\n                    'pct_change'  : safe_float(row.iloc[6] if col_count > 6 else 0.0, default=0.0),\n                }\n            except Exception as e:\n                print(f\"  ⚠️  Row parse error: {e}\")\n                continue\n\n        return tos_data\n\n    except Exception as e:\n        print(f\"  ❌ Could not read Google Sheet: {e}\")\n        return {}\n\n\n# ── Main scan function ────────────────────────────────────\ndef run_tos_scan():\n    global ALERTED_TODAY\n\n    now = get_est_time()\n    print(f'\\n📱 TOS Scan — {now.strftime(\"%I:%M %p EST\")} on {now.strftime(\"%A, %b %d\")}')\n\n    # ── Read TOS data from Sheet ──────────────────────────\n    print(f'  Reading TOS data from Sheet...', end=' ')\n    tos_data = read_tos_data_from_sheet(SHEET_ID, TAB_NAME)\n    if not tos_data:\n        print('\\n  ❌ No data found in scanner tab.')\n        return\n    tickers = list(tos_data.keys())\n    print(f'{len(tickers)} tickers: {tickers}')\n\n    # ── VIX ──────────────────────────────────────────────\n    print('  VIX...', end=' ')\n    vix = get_vix()\n    vix_str = str(round(vix, 2)) if vix else 'N/A'\n    print(vix_str)\n    if vix and (vix < VIX_MIN or vix > VIX_MAX):\n        print(f'⛔ VIX {vix_str} outside range. No trades.')\n        return\n\n    # ── SPY RVol benchmark ────────────────────────────────\n    print('  SPY RVol...', end=' ')\n    spy_rvol     = get_spy_rvol()\n    spy_rvol_str = f'{spy_rvol}x' if spy_rvol else 'N/A'\n    rvol_threshold = get_rvol_threshold()\n    print(f'{spy_rvol_str} | Threshold: {rvol_threshold}x')\n\n    # ── Dedup reset ───────────────────────────────────────\n    if ALERTED_TODAY.get('_date') != str(date.today()):\n        ALERTED_TODAY = {'_date': str(date.today())}\n\n    # ── Fetch daily bars for grading (yfinance — 10Q only) ─\n    print('  Daily data for grading...', end=' ')\n    daily_raw = get_daily_raw(tickers)\n    if daily_raw is None:\n        print('FAILED.')\n        return\n    print('done.')\n\n    # ── Fetch 1H data for timestamp ───────────────────────\n    print('  1H data...', end=' ')\n    hourly_raw = get_hourly(tickers)\n    if hourly_raw is None:\n        print('FAILED.')\n        return\n    hourly_close = hourly_raw['Close']\n    if isinstance(hourly_close, pd.Series):\n        hourly_close = hourly_close.to_frame(name=tickers[0])\n    print('done.')\n\n    # ── Last data timestamp ───────────────────────────────\n    data_time = None\n    try:\n        today_str  = str(date.today())\n        idx        = hourly_close.index\n        idx_naive  = idx.tz_localize(None) if idx.tz is not None else idx\n        today_mask = idx_naive.strftime('%Y-%m-%d') == today_str\n        if today_mask.any():\n            data_time = idx_naive[today_mask][-1].to_pydatetime()\n    except:\n        pass\n\n    # ── Grade each ticker ────────────────────────────────\n    signals_found = []\n    skipped_log   = []\n\n    for ticker in tickers:\n        print(f'\\n  [{ticker}]')\n        td = tos_data[ticker]\n\n        # ── TOS values — source of truth ─────────────────\n        price      = td['last']\n        atr_dollar = td['atr_dollar']\n        atr_pct    = td['atr_pct']\n        rvol       = td['rvol']\n        dist_sh    = td['swing_delta']\n        pct_change = td['pct_change'] or 0.0\n\n        # Validate critical TOS fields\n        if price is None:\n            reason = 'no Last price in TOS data'\n            print(f'    ⚠️  {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason})\n            continue\n\n        if atr_dollar is None or atr_dollar <= 0:\n            reason = 'no ATR$ in TOS data — check Screenshot 2'\n            print(f'    ⚠️  {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason})\n            continue\n\n        if atr_pct is None:\n            reason = 'no ATR% in TOS data'\n            print(f'    ⚠️  {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason})\n            continue\n\n        # ── ATR% filter (from TOS — source of truth) ─────\n        if atr_pct < 1.0:\n            reason = f'ATR {atr_pct}% too tight (min 1.0%) — TOS value'\n            print(f'    ⛔ {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason, 'atr_pct': atr_pct})\n            continue\n\n        # ── Catalyst detection (%Change from TOS) ────────\n        if abs(pct_change) > 8.0:\n            print(f'    ⚠️  CATALYST FLAG: {pct_change}% move today — verify before taking')\n\n        # ── RVol context (TOS value vs SPY benchmark) ─────\n        rvol_str = f'{rvol}x' if rvol else 'check TOS'\n        if spy_rvol and rvol:\n            spy_rel = round(rvol / spy_rvol, 2)\n            print(f'    📊 TOS RVol: {rvol_str} | SPY: {spy_rvol_str} | Relative: {spy_rel}x | Threshold: {rvol_threshold}x')\n        else:\n            print(f'    📊 TOS RVol: {rvol_str} | Threshold: {rvol_threshold}x')\n\n        # SwingΔ context (TOS value)\n        if dist_sh is not None:\n            print(f'    📊 TOS SwingΔ: {dist_sh}%')\n\n        # ── Grade (yfinance daily bars — 10 questions) ───\n        bars = get_bars(ticker, daily_raw)\n        score, grade, scores = grade_signal(bars, price, vix)\n        print(f'    Score: {score}/10 | Grade: {grade} | ATR$: ${atr_dollar} | ATR%: {atr_pct}%')\n\n        if grade not in ('A', 'B'):\n            reason = f'grade {grade} (score {score}/10) — C/D not tradeable'\n            print(f'    ⛔ {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason, 'score': score, 'grade': grade,\n                                 'atr_pct': atr_pct, 'swing_delta': dist_sh, 'rvol': rvol})\n            continue\n\n        # ── Float, Earnings, Sector (yfinance) ───────────\n        print(f'    Fetching ticker info...', end=' ')\n        float_m, mktcap_m, has_earnings, yf_sector = get_ticker_info(ticker)\n        print(f'float={float_m}M earnings={has_earnings}')\n\n        if float_m is not None and float_m < MIN_FLOAT_M:\n            reason = f'float {float_m}M below min {MIN_FLOAT_M}M'\n            print(f'    ⛔ {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason})\n            continue\n\n        if has_earnings:\n            reason = f'earnings within {EARNINGS_DAYS} days'\n            print(f'    ⛔ {reason}')\n            skipped_log.append({'ticker': ticker, 'reason': reason, 'score': score, 'grade': grade})\n            continue\n\n        # Sector\n        sector = SECTOR_MAP.get(ticker.upper())\n        if not sector and yf_sector:\n            sector = yf_sector\n            SECTOR_MAP[ticker.upper()] = sector\n        sector = sector or 'Unknown'\n\n        print(f'    ✅ SIGNAL: {grade} | {score}/10 | ${price} | {sector}')\n\n        # ── Calculate stop/target/shares from TOS ATR$ ───\n        stop   = round(price - ATR_STOP_MULT   * atr_dollar, 2)\n        target = round(price + ATR_TARGET_MULT * atr_dollar, 2)\n        shares = max(1, int(RISK_PER_TRADE / (ATR_STOP_MULT * atr_dollar)))\n\n        signals_found.append({\n            'ticker'         : ticker,\n            'grade'          : grade,\n            'score'          : score,\n            'entry'          : round(price, 2),\n            'stop'           : stop,\n            'target'         : target,\n            'atr'            : round(atr_dollar, 3),\n            'atr_pct'        : atr_pct,\n            'shares'         : shares,\n            'vix'            : round(vix, 2) if vix else 'N/A',\n            'earnings'       : 'YES' if has_earnings else 'NO',\n            'sector'         : sector,\n            'dist_swing_high': dist_sh,\n            'rvol'           : rvol,\n            'pct_change'     : pct_change,\n            'float_m'        : float_m,\n            'mktcap_m'       : mktcap_m,\n            'rvol_threshold' : rvol_threshold,\n            'spy_rvol'       : spy_rvol,\n        })\n        ALERTED_TODAY[ticker] = {'time': now.strftime('%I:%M %p'), 'grade': grade, 'entry': round(price, 2)}\n\n    # ── Summary + Telegram ────────────────────────────────\n    print(f'\\n{\"═\"*50}')\n    log_to_scan_log(SHEET_ID, now, signals_found, skipped_log)\n\n    if signals_found:\n        msg  = format_alert(signals_found, now, data_time, spy_rvol=spy_rvol, rvol_threshold=rvol_threshold)\n        sent = send_telegram(msg)\n        print(f'\\n📲 Telegram: {\"✅ Sent\" if sent else \"❌ Failed\"} — {[s[\"ticker\"] for s in signals_found]}')\n    else:\n        print(f'\\n💤 No qualifying signals.')\n\n    return signals_found, skipped_log\n\n\nrun_tos_scan()\n"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 6 — SEND HEARTBEAT  (optional — test Telegram connection)\n# ════════════════════════════════════════════════════════\n\ndef send_heartbeat():\n    vix = get_vix()\n    vix_str  = str(round(vix, 2)) if vix else 'N/A'\n    vix_note = ''\n    if vix:\n        if   vix < VIX_MIN: vix_note = f' ⚠️ Below {VIX_MIN} — no trades today'\n        elif vix > VIX_MAX: vix_note = f' ⚠️ Above {VIX_MAX} — no trades today'\n        else:                vix_note = ' ✅ In range'\n    msg = (f'✅ <b>SwingBot Online — Colab</b>\\n'\n           f'Manual scan session started\\n'\n           f'━━━━━━━━━━━━━━━━━━━━━\\n'\n           f'Universe : {len(UNIVERSE)} tickers\\n'\n           f'VIX      : {vix_str}{vix_note}\\n'\n           f'Scans    : run Cell 5 each hour (9:30AM–4:00PM EST)')\n    sent = send_telegram(msg)\n    print(f'Heartbeat sent: {\"✅\" if sent else \"❌ Failed\"}  |  VIX: {vix_str}')\n\n# send_heartbeat()"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 7 — SEND DAILY RECAP  (optional — run at end of day)\n# ════════════════════════════════════════════════════════\n\ndef send_recap():\n    vix     = get_vix()\n    vix_str = str(round(vix, 2)) if vix else 'N/A'\n    now_str = get_est_time().strftime('%B %d, %Y')\n    # Remove internal _date key\n    alerted = {k:v for k,v in ALERTED_TODAY.items() if not k.startswith('_')}\n\n    if not alerted:\n        msg = (f'📊 <b>SwingBot Daily Recap — {now_str}</b>\\n'\n               f'━━━━━━━━━━━━━━━━━━━━━\\n'\n               f'No signals today\\n'\n               f'VIX: {vix_str}')\n    else:\n        lines = [\n            f'📊 <b>SwingBot Daily Recap — {now_str}</b>',\n            f'━━━━━━━━━━━━━━━━━━━━━',\n            f'Signals today: {len(alerted)}',\n            '━━━━━━━━━━━━━━━━━━━━━'\n        ]\n        for ticker, info in alerted.items():\n            lines.append(f'{info[\"time\"]} — <b>{ticker}</b> | Grade {info[\"grade\"]} | Entry ${info[\"entry\"]}')\n        lines += ['━━━━━━━━━━━━━━━━━━━━━', f'VIX today: {vix_str}']\n        msg = '\\n'.join(lines)\n\n    sent = send_telegram(msg)\n    print(f'Recap sent: {\"✅\" if sent else \"❌ Failed\"}')\n    print(f'Signals alerted: {list(alerted.keys()) if alerted else \"None\"}')\n\n# send_recap()"
+  },
+  {
+   "cell_type": "code",
+   "metadata": {},
+   "execution_count": null,
+   "outputs": [],
+   "source": "# ════════════════════════════════════════════════════════\n# CELL 8 — PIPELINE TEST  (optional — confirm Telegram works)\n# ════════════════════════════════════════════════════════\n\ndef test_pipeline():\n    vix     = get_vix()\n    now_str = get_est_time().strftime('%I:%M %p EST')\n    msg = (f'\\U0001f7e2 <b>SwingBot Pipeline Test — Colab</b>\\n'\n           f'━━━━━━━━━━━━━━━━━━━━━\\n'\n           f'Colab → Telegram: ✅ Working\\n'\n           f'Time     : {now_str}\\n'\n           f'VIX      : {round(vix,2) if vix else \"N/A\"}\\n'\n           f'Universe : {len(UNIVERSE)} tickers\\n'\n           f'━━━━━━━━━━━━━━━━━━━━━\\n'\n           f'SwingBot Colab scanner is ready!')\n    sent = send_telegram(msg)\n    print(f'Test message sent: {\"✅\" if sent else \"❌ Check your TELEGRAM_TOKEN and CHAT_ID\"}')\n\n# test_pipeline()"
   }
-}
-
-// ══════════════════════════════════════════════════════════════
-// readTrades — preserved exactly from v7
-// Returns all RAW_DATA rows as JSON for journal display
-// ══════════════════════════════════════════════════════════════
-function readTrades() {
-  try {
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(RAW_DATA_TAB);
-    if (!sheet) return { status: 'error', message: RAW_DATA_TAB + ' tab not found' };
-
-    var data    = sheet.getDataRange().getValues();
-    var headers = data[0];
-    var rows    = [];
-
-    for (var i = 1; i < data.length; i++) {
-      var row = {};
-      for (var j = 0; j < headers.length; j++) {
-        row[headers[j]] = data[i][j];
-      }
-      rows.push(row);
-    }
-
-    return { status: 'ok', count: rows.length, trades: rows };
-
-  } catch (err) {
-    return { status: 'error', message: err.toString() };
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
-// writeScanLog — NEW in v8
-// Appends one row to SCAN_LOG tab
-// Called by Colab Cell 5.5 log_to_scan_log() for every
-// ticker processed (signals + skips)
-//
-// Expected data fields:
-//   timestamp, ticker, result (SIGNAL/SKIP), reason,
-//   score, grade, atr_pct, swing_delta
-//
-// SCAN_LOG tab must exist with headers in row 1:
-//   Timestamp | Ticker | Result | Reason | Score | Grade | ATR% | SwingΔ%
-// ══════════════════════════════════════════════════════════════
-function writeScanLog(data) {
-  try {
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(SCAN_LOG_TAB);
-
-    // Auto-create SCAN_LOG tab if it doesn't exist
-    if (!sheet) {
-      sheet = ss.insertSheet(SCAN_LOG_TAB);
-      var headers = ['Timestamp', 'Ticker', 'Result', 'Reason', 'Score', 'Grade', 'ATR%', 'SwingΔ%'];
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-      sheet.setFrozenRows(1);
-    }
-
-    var row = [
-      data.timestamp   || new Date().toISOString(),  // A: Timestamp
-      data.ticker      || '',                         // B: Ticker
-      data.result      || '',                         // C: Result (SIGNAL/SKIP)
-      data.reason      || '',                         // D: Reason
-      data.score       || '',                         // E: Score
-      data.grade       || '',                         // F: Grade
-      data.atr_pct     || '',                         // G: ATR%
-      data.swing_delta || '',                         // H: SwingΔ%
-    ];
-
-    var lastRow = sheet.getLastRow() + 1;
-    sheet.getRange(lastRow, 1, 1, row.length).setValues([row]);
-
-    // Color Result cell: green for SIGNAL, red for SKIP
-    var resultCell = sheet.getRange(lastRow, 3);
-    if (data.result === 'SIGNAL') {
-      resultCell.setBackground('#b7e1cd');  // green
-    } else if (data.result === 'SKIP') {
-      resultCell.setBackground('#f4c7c3');  // red
-    }
-
-    return { status: 'ok', action: 'scan_log_added', row: lastRow };
-
-  } catch (err) {
-    return { status: 'error', message: err.toString() };
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
-// testConnection — preserved from v7
-// Run manually from Apps Script editor to verify sheet access
-// ══════════════════════════════════════════════════════════════
-function testConnection() {
-  var ss       = SpreadsheetApp.getActiveSpreadsheet();
-  var rawSheet = ss.getSheetByName(RAW_DATA_TAB);
-  var logSheet = ss.getSheetByName(SCAN_LOG_TAB);
-
-  Logger.log('SwingBot Apps Script v8');
-  Logger.log('Spreadsheet: ' + ss.getName());
-  Logger.log(RAW_DATA_TAB + ' tab: ' + (rawSheet ? '✅ Found (' + rawSheet.getLastRow() + ' rows)' : '❌ NOT FOUND'));
-  Logger.log(SCAN_LOG_TAB + ' tab: ' + (logSheet ? '✅ Found (' + logSheet.getLastRow() + ' rows)' : '⚠️  Not found — will auto-create on first scan'));
-  Logger.log('All functions: writeTrade ✅ | readTrades ✅ | writeScanLog ✅ | buildDashboard ✅');
-}
-
-// ══════════════════════════════════════════════════════════════
-// buildDashboard — preserved exactly from v7
-// Run once manually from Apps Script editor
-// Creates DASHBOARD tab with auto-updating formulas
-// ══════════════════════════════════════════════════════════════
-function buildDashboard() {
-  var ss    = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(DASHBOARD_TAB);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(DASHBOARD_TAB);
-  } else {
-    sheet.clear();
-  }
-
-  // ── Styling helpers ───────────────────────────────────────
-  function header(range, label) {
-    range.setValue(label);
-    range.setFontWeight('bold');
-    range.setBackground('#1e2327');
-    range.setFontColor('#ffffff');
-  }
-
-  function label(range, text) {
-    range.setValue(text);
-    range.setFontColor('#555555');
-  }
-
-  var col = 1;
-
-  // ── Performance Summary ───────────────────────────────────
-  header(sheet.getRange(1, col), 'PERFORMANCE SUMMARY');
-  label(sheet.getRange(2, col), 'Total P&L ($)');
-  sheet.getRange(2, col + 1).setFormula("=IFERROR(SUM(RAW_DATA!R:R),0)");
-  label(sheet.getRange(3, col), 'Total Trades');
-  sheet.getRange(3, col + 1).setFormula("=IFERROR(COUNTA(RAW_DATA!J2:J)-COUNTBLANK(RAW_DATA!J2:J),0)");
-  label(sheet.getRange(4, col), 'Win Rate');
-  sheet.getRange(4, col + 1).setFormula('=IFERROR(COUNTIF(RAW_DATA!R:R,">0")/COUNTA(RAW_DATA!J2:J),0)');
-  sheet.getRange(4, col + 1).setNumberFormat('0.0%');
-  label(sheet.getRange(5, col), 'Avg Win ($)');
-  sheet.getRange(5, col + 1).setFormula('=IFERROR(AVERAGEIF(RAW_DATA!R:R,">0"),0)');
-  label(sheet.getRange(6, col), 'Avg Loss ($)');
-  sheet.getRange(6, col + 1).setFormula('=IFERROR(AVERAGEIF(RAW_DATA!R:R,"<0"),0)');
-  label(sheet.getRange(7, col), 'Expectancy ($)');
-  sheet.getRange(7, col + 1).setFormula('=IFERROR(AVERAGE(RAW_DATA!R2:R),0)');
-  label(sheet.getRange(8, col), 'Trades to 50');
-  sheet.getRange(8, col + 1).setFormula('=MAX(0,50-COUNTA(RAW_DATA!J2:J)+COUNTBLANK(RAW_DATA!J2:J))');
-
-  // ── P&L by Signal Grade ───────────────────────────────────
-  var row = 10;
-  header(sheet.getRange(row, col), 'P&L BY SIGNAL GRADE');
-  ['A', 'B', 'C'].forEach(function(g) {
-    row++;
-    label(sheet.getRange(row, col), 'Grade ' + g);
-    sheet.getRange(row, col + 1).setFormula('=IFERROR(SUMIF(RAW_DATA!V:V,"' + g + '",RAW_DATA!R:R),0)');
-  });
-
-  // ── P&L by Self Grade ─────────────────────────────────────
-  row += 2;
-  header(sheet.getRange(row, col), 'P&L BY SELF GRADE');
-  ['A', 'B', 'C'].forEach(function(g) {
-    row++;
-    label(sheet.getRange(row, col), 'Self ' + g);
-    sheet.getRange(row, col + 1).setFormula('=IFERROR(SUMIF(RAW_DATA!W:W,"' + g + '",RAW_DATA!R:R),0)');
-  });
-
-  // ── P&L by Exit Reason ───────────────────────────────────
-  row += 2;
-  header(sheet.getRange(row, col), 'P&L BY EXIT REASON');
-  var exitReasons = ['Target Hit', 'Stop Hit', 'EMA Exit', 'Dead Trade', 'Manual'];
-  exitReasons.forEach(function(reason) {
-    row++;
-    label(sheet.getRange(row, col), reason);
-    sheet.getRange(row, col + 1).setFormula('=IFERROR(SUMIF(RAW_DATA!L:L,"' + reason + '",RAW_DATA!R:R),0)');
-  });
-
-  // ── P&L by Sector ────────────────────────────────────────
-  row += 2;
-  header(sheet.getRange(row, col), 'P&L BY SECTOR');
-  var sectors = ['Technology', 'Healthcare', 'Financials', 'Energy', 'Consumer',
-                 'Industrials', 'REITs', 'Crypto', 'Biotech', 'Utilities',
-                 'Telecom', 'Materials'];
-  sectors.forEach(function(sector) {
-    row++;
-    label(sheet.getRange(row, col), sector);
-    sheet.getRange(row, col + 1).setFormula('=IFERROR(SUMIF(RAW_DATA!D:D,"' + sector + '",RAW_DATA!R:R),0)');
-  });
-
-  // ── Format value column ──────────────────────────────────
-  sheet.getRange(2, col + 1, row, 1).setNumberFormat('$#,##0.00');
-  sheet.setColumnWidth(col, 180);
-  sheet.setColumnWidth(col + 1, 120);
-
-  Logger.log('✅ DASHBOARD tab built successfully.');
+ ]
 }
