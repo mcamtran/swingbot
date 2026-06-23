@@ -140,11 +140,12 @@
           <div class="field-label">Sector</div>
           <select id="entry-sector">
             <option value="">— Select —</option>
-            <option>Technology</option><option>Financials</option><option>Financial Services</option>
-            <option>Healthcare</option><option>Energy</option><option>Industrials</option>
-            <option>Consumer</option><option>Utilities</option><option>REITs</option>
-            <option>Materials</option><option>Telecom</option><option>Biotech</option>
-            <option>Crypto</option><option>CEF</option><option>Unknown</option>
+            <option>Financials</option>
+            <option>Health Care</option><option>Energy</option><option>Industrials</option>
+            <option>Consumer Discretionary</option><option>Consumer Staples</option>
+            <option>Information Technology</option><option>Utilities</option>
+            <option>Real Estate</option><option>Materials</option>
+            <option>Communication Services</option><option>CEF</option><option>Unknown</option>
           </select>
         </div>
         <div>
@@ -273,8 +274,6 @@ const HARDCODED_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwr2ba2kh_kca
 
 // ═══════════════════════════════════════════════════════════
 // COLUMN MAPPING — Sheet headers → journal field names
-// FIX #2: Maps raw Google Sheets column headers to the field
-// names used throughout the journal JS code.
 // RAW_DATA headers: Trade# | Date | Ticker | Sector | Direction |
 // Shares | Entry | Stop | Target | Exit Price | Exit Date |
 // Exit Reason | ATR | Rel Vol | Swing Delta% | Float(M) | VIX |
@@ -309,7 +308,6 @@ function mapRow(raw) {
     self_grade   : raw['Self Grade']    || '',
     score        : raw['Score/10']      || '',
     notes        : raw['Notes']         || '',
-    // is_open: true if no exit price logged
     is_open      : !raw['Exit Price'] || raw['Exit Price'] === '' || raw['Exit Price'] === 0,
   };
 }
@@ -348,7 +346,6 @@ async function testWebhook() {
   try {
     const r = await fetch(getWebhook());
     const d = await r.json();
-    // FIX #3: Apps Script v8 returns {status:'ok'} not {success:true}
     const ok = d.status === 'ok' || d.message;
     showStatus('settings-status', ok ? 'Connected ✓ — ' + (d.message || 'Apps Script v8 online') : 'Unexpected response', ok ? 'success' : 'error');
   } catch(e) {
@@ -369,7 +366,6 @@ function switchTab(tab) {
 
 // ═══════════════════════════════════════════════════════════
 // LOAD TRADES FROM GOOGLE SHEETS
-// FIX #2: Apply mapRow() to translate sheet headers to journal fields
 // ═══════════════════════════════════════════════════════════
 async function loadTrades() {
   document.getElementById('trades-count').textContent = 'Loading...';
@@ -378,10 +374,8 @@ async function loadTrades() {
     const r   = await fetch(url);
     const d   = await r.json();
 
-    // FIX #3: check status:'ok' not d.error
     if (d.status !== 'ok') throw new Error(d.message || 'Read failed');
 
-    // FIX #2: map raw sheet rows to journal field names
     allTrades = (d.trades || []).map(mapRow);
 
     renderTrades(currentFilter);
@@ -588,7 +582,6 @@ async function submitEntry() {
   const entry = d.fill_price || d.entry || d.entry_price || 0;
   const atr   = d.atr || 0;
 
-  // FIX #3: payload field names match Apps Script v8 writeTrade() expectations
   const payload = {
     ticker       : d.ticker,
     date         : d.date || new Date().toISOString().split('T')[0],
@@ -666,7 +659,6 @@ async function submitExit() {
   const d         = parsedExit;
   const exitPrice = d.fill_price || d.exit_price || 0;
 
-  // FIX #3: payload field names match Apps Script v8 writeTrade() exit expectations
   const payload = {
     id          : tradeId,
     ticker      : trade ? trade.ticker : d.ticker,
@@ -696,14 +688,12 @@ async function submitExit() {
 
 // ═══════════════════════════════════════════════════════════
 // SEND TO SHEET
-// FIX #3: Check status:'ok' instead of success:true
 // ═══════════════════════════════════════════════════════════
 async function sendToSheet(payload) {
   try {
     const url = getWebhook() + '?data=' + encodeURIComponent(JSON.stringify(payload));
     const r   = await fetch(url);
     const d   = await r.json();
-    // Apps Script v8 returns {status:'ok', action:'entry_added'} or {status:'ok', action:'exit_updated'}
     return d.status === 'ok';
   } catch(e) {
     console.error('Sheet error:', e);
