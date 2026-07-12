@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SwingBot Journal v14</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1c1c26;
+    --border: #2a2a3a;
+    --accent: #00d4aa;
+    --accent2: #7c5cff;
+    --red: #ff4d6d;
+    --green: #00d4aa;
+    --yellow: #ffd166;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; padding-bottom: 80px; }
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 20px 12px; position: sticky; top: 0; z-index: 100; }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .logo { font-family: var(--mono); font-size: 14px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
+  .header-stats { display: flex; gap: 16px; }
+  .hstat { text-align: right; }
+  .hstat-val { font-family: var(--mono); font-size: 14px; font-weight: 700; }
+  .hstat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .neu { color: var(--text); }
+  .nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
+  .nav-btn { flex: 1; padding: 12px 4px 10px; background: none; border: none; color: var(--muted); font-family: var(--sans); font-size: 10px; font-weight: 500; letter-spacing: 0.5px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: color 0.2s; }
+  .nav-btn.active { color: var(--accent); }
+  .nav-icon { font-size: 18px; line-height: 1; }
+  .tab { display: none; padding: 16px; } .tab.active { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .card-title { font-family: var(--mono); font-size: 10px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
+  textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 11px; padding: 12px; resize: vertical; min-height: 120px; outline: none; transition: border-color 0.2s; }
+  textarea:focus { border-color: var(--accent); }
+  input, select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--sans); font-size: 14px; padding: 10px 12px; outline: none; transition: border-color 0.2s; -webkit-appearance: none; }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--surface); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .field-row.single { grid-template-columns: 1fr; }
+  .field-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .from-json { color: var(--accent); text-transform: none; letter-spacing: 0; font-size: 9px; }
+  .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; letter-spacing: 0.5px; transition: all 0.2s; margin-top: 8px; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:active { opacity: 0.8; transform: scale(0.98); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-small { width: auto; padding: 6px 14px; font-size: 12px; margin-top: 0; }
+  .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .preview-item { background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+  .preview-item .label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
+  .preview-item .value { font-family: var(--mono); font-size: 13px; color: var(--text); }
+  .trade-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; position: relative; }
+  .trade-card.open { border-left: 3px solid var(--accent); }
+  .trade-card.closed.win { border-left: 3px solid var(--green); }
+  .trade-card.closed.loss { border-left: 3px solid var(--red); }
+  .trade-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .trade-ticker { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--text); }
+  .trade-pnl { font-family: var(--mono); font-size: 16px; font-weight: 700; text-align: right; }
+  .trade-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .tag { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 500; letter-spacing: 0.5px; }
+  .tag-open { background: rgba(0,212,170,0.15); color: var(--accent); }
+  .tag-grade-aplus { background: rgba(0,212,170,0.22); color: var(--green); }
+  .tag-grade-a { background: rgba(0,212,170,0.2); color: var(--green); }
+  .tag-grade-b { background: rgba(124,92,255,0.2); color: var(--accent2); }
+  .tag-band { background: rgba(124,92,255,0.14); color: var(--accent2); }
+  .tag-sector { background: var(--surface2); color: var(--muted); }
+  .tag-date { background: var(--surface2); color: var(--muted); }
+  .trade-levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .level-item { background: var(--bg); border-radius: 6px; padding: 6px 8px; text-align: center; }
+  .level-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .level-val { font-family: var(--mono); font-size: 12px; margin-top: 2px; }
+  .exit-btn { margin-top: 10px; padding: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--accent); font-family: var(--sans); font-size: 12px; font-weight: 600; width: 100%; cursor: pointer; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .stat-box { background: var(--bg); border-radius: 10px; padding: 14px; text-align: center; }
+  .stat-val { font-family: var(--mono); font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .stat-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .breakdown-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .breakdown-row:last-child { border-bottom: none; }
+  .breakdown-label { font-size: 13px; color: var(--text); }
+  .breakdown-val { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .section-title { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
+  .status { padding: 12px; border-radius: 8px; font-size: 13px; margin-top: 8px; text-align: center; }
+  .status.success { background: rgba(0,212,170,0.1); color: var(--green); border: 1px solid rgba(0,212,170,0.3); }
+  .status.error { background: rgba(255,77,109,0.1); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+  .status.loading { background: rgba(124,92,255,0.1); color: var(--accent2); border: 1px solid rgba(124,92,255,0.3); }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 4px; }
+  .filter-btn { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-text { font-size: 14px; }
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.5s ease; }
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+  .hidden { display: none; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-top">
+    <div class="logo">⚡ SwingBot v14</div>
+    <div class="header-stats">
+      <div class="hstat"><div class="hstat-val" id="h-pnl">—</div><div class="hstat-label">Total P&L</div></div>
+      <div class="hstat"><div class="hstat-val" id="h-exp">—</div><div class="hstat-label">Exp (R)</div></div>
+      <div class="hstat"><div class="hstat-val" id="h-open">—</div><div class="hstat-label">Open</div></div>
+    </div>
+  </div>
+</div>
+<nav class="nav">
+  <button class="nav-btn active" onclick="switchTab('log')" id="nav-log"><span class="nav-icon">✏️</span>LOG</button>
+  <button class="nav-btn" onclick="switchTab('trades')" id="nav-trades"><span class="nav-icon">📋</span>TRADES</button>
+  <button class="nav-btn" onclick="switchTab('stats')" id="nav-stats"><span class="nav-icon">📊</span>STATS</button>
+  <button class="nav-btn" onclick="switchTab('settings')" id="nav-settings"><span class="nav-icon">⚙️</span>SETTINGS</button>
+</nav>
+<!-- LOG TAB -->
+<div class="tab active" id="tab-log">
+  <div class="card">
+    <div class="card-title">📥 Log Entry</div>
+    <div class="field-label">Paste entry JSON from Claude</div>
+    <textarea id="entry-json" placeholder='{"trade_id":"SWBI_012","ticker":"SWBI","sector":"Financials","grade":"A+","mcap_tier":"deep","market_cap":6200,"atr":0.40,"shares":35,"fill_price":15.22,"stop":14.82,"target":16.02,"conviction":3,...}'></textarea>
+    <button class="btn btn-secondary" onclick="parseEntry()" style="margin-top:8px">Parse Entry</button>
+    <div id="entry-preview" class="hidden">
+      <div class="divider"></div>
+      <div class="preview-grid" id="entry-fields"></div>
+      <div class="field-row">
+        <div>
+          <div class="field-label">Sector <span class="from-json" id="entry-sector-src"></span></div>
+          <select id="entry-sector">
+            <option value="">— Select —</option>
+            <option>Financials</option>
+            <option>Health Care</option><option>Energy</option><option>Industrials</option>
+            <option>Consumer Discretionary</option><option>Consumer Staples</option>
+            <option>Information Technology</option><option>Utilities</option>
+            <option>Real Estate</option><option>Materials</option>
+            <option>Communication Services</option><option>CEF</option><option>Unknown</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">Grade (v14) <span class="from-json" id="entry-grade-src"></span></div>
+          <select id="entry-grade">
+            <option value="">— Grade —</option>
+            <option>A+</option><option>B</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div>
+          <div class="field-label">Conviction <span class="from-json" id="entry-conv-src"></span></div>
+          <select id="entry-conviction">
+            <option value="">— 1-5 —</option>
+            <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+          </select>
+        </div>
+        <div><div class="field-label">Notes</div><input type="text" id="entry-notes" placeholder="Optional"></div>
+      </div>
+      <div id="entry-confirm" class="hidden" style="margin-top:8px">
+        <div style="font-size:12px;color:var(--yellow);margin-bottom:6px;text-align:center">⚠️ Confirm — tap Save to write to Google Sheets</div>
+        <button class="btn btn-primary" onclick="submitEntry()">✓ Confirm &amp; Save Entry</button>
+      </div>
+      <button class="btn btn-secondary" id="entry-confirm-btn" onclick="showEntryConfirm()" style="margin-top:8px">Save Entry</button>
+      <div id="entry-status"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">📤 Log Exit</div>
+    <div class="field-row single" style="margin-bottom:8px">
+      <div><div class="field-label">Open Trade <span class="from-json" id="exit-match-src"></span></div>
+      <select id="exit-trade-select"><option value="">⏳ Loading trades...</option></select></div>
+    </div>
+    <div class="field-label">Paste exit JSON from Claude</div>
+    <textarea id="exit-json" placeholder='{"trade_id":"SWBI_012","exit_price":16.09,"exit_date":"2026-07-18","exit_reason":"Target Hit","slippage_usd":-0.02,"slippage_r":-0.05,"adherence_flag":"clean"}'></textarea>
+    <button class="btn btn-secondary" onclick="parseExit()" style="margin-top:8px">Parse Exit</button>
+    <div id="exit-preview" class="hidden">
+      <div class="divider"></div>
+      <div class="preview-grid" id="exit-fields"></div>
+      <div class="field-row">
+        <div>
+          <div class="field-label">Exit Reason <span class="from-json" id="exit-reason-src"></span></div>
+          <select id="exit-reason">
+            <option value="">— Reason —</option>
+            <option>Target Hit</option><option>Stop Hit</option><option>EMA Exit</option>
+            <option>Manual — Profit</option><option>Manual — Dead Trade</option>
+            <option>8-Day Timeout</option><option>Earnings Risk</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">Adherence <span class="from-json" id="exit-adh-src"></span></div>
+          <select id="exit-adherence">
+            <option value="">— Flag —</option>
+            <option>clean</option><option>stop-touched</option><option>rule-break</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row single" style="margin-top:8px">
+        <div><div class="field-label">Notes</div><input type="text" id="exit-notes" placeholder="Optional"></div>
+      </div>
+      <div id="exit-confirm" class="hidden" style="margin-top:8px">
+        <div style="font-size:12px;color:var(--yellow);margin-bottom:6px;text-align:center">⚠️ Confirm — tap Save to write to Google Sheets</div>
+        <button class="btn btn-primary" onclick="submitExit()">✓ Confirm &amp; Save Exit</button>
+      </div>
+      <button class="btn btn-secondary" id="exit-confirm-btn" onclick="showExitConfirm()" style="margin-top:8px">Save Exit</button>
+      <div id="exit-status"></div>
+    </div>
+  </div>
+</div>
+<!-- TRADES TAB -->
+<div class="tab" id="tab-trades">
+  <div class="filter-row">
+    <button class="filter-btn active" onclick="filterTrades('all', this)">All</button>
+    <button class="filter-btn" onclick="filterTrades('open', this)">Open</button>
+    <button class="filter-btn" onclick="filterTrades('closed', this)">Closed</button>
+    <button class="filter-btn" onclick="filterTrades('win', this)">Winners</button>
+    <button class="filter-btn" onclick="filterTrades('loss', this)">Losers</button>
+  </div>
+  <div class="section-header">
+    <div class="section-title" id="trades-count">Loading...</div>
+    <button class="btn btn-secondary btn-small" onclick="loadTrades()">↻ Refresh</button>
+  </div>
+  <div id="trades-list"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Loading trades...</div></div></div>
+</div>
+<!-- STATS TAB -->
+<div class="tab" id="tab-stats">
+  <div class="card">
+    <div class="card-title">Performance</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="stat-val" id="s-pnl">—</div><div class="stat-label">Total P&L</div></div>
+      <div class="stat-box"><div class="stat-val" id="s-wr">—</div><div class="stat-label">Win Rate</div></div>
+      <div class="stat-box"><div class="stat-val" id="s-expR">—</div><div class="stat-label">Expectancy (R)</div></div>
+      <div class="stat-box"><div class="stat-val" id="s-expD">—</div><div class="stat-label">Expectancy ($)</div></div>
+      <div class="stat-box"><div class="stat-val pos" id="s-avgwin">—</div><div class="stat-label">Avg Win</div></div>
+      <div class="stat-box"><div class="stat-val neg" id="s-avgloss">—</div><div class="stat-label">Avg Loss</div></div>
+      <div class="stat-box"><div class="stat-val" id="s-avgR">—</div><div class="stat-label">Avg R</div></div>
+      <div class="stat-box"><div class="stat-val" id="s-trades">—</div><div class="stat-label">Total Trades</div></div>
+    </div>
+    <div class="field-label" style="margin-bottom:6px">Progress to Batch 1 (100 trades)</div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+      <span id="s-progress-text">0 / 100 trades</span><span id="s-progress-pct">0%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="s-progress-bar" style="width:0%"></div></div>
+  </div>
+  <div class="card"><div class="card-title">R & P&L by Grade (v14)</div><div id="s-by-grade"><div class="empty"><div class="empty-text">No closed trades yet</div></div></div></div>
+  <div class="card"><div class="card-title">R & P&L by Mcap Tier</div><div id="s-by-tier"><div class="empty"><div class="empty-text">No closed trades yet</div></div></div></div>
+  <div class="card"><div class="card-title">R & P&L by Sector</div><div id="s-by-sector"><div class="empty"><div class="empty-text">No closed trades yet</div></div></div></div>
+  <div class="card"><div class="card-title">R & P&L by Exit Reason</div><div id="s-by-exit"><div class="empty"><div class="empty-text">No closed trades yet</div></div></div></div>
+</div>
+<!-- SETTINGS TAB -->
+<div class="tab" id="tab-settings">
+  <div class="card">
+    <div class="card-title">⚙️ Configuration</div>
+    <div class="field-label" style="margin-bottom:4px">Webhook URL</div>
+    <input type="text" id="webhook-url" value="">
+    <div style="font-size:11px;color:var(--muted);margin-top:4px">Update after every Apps Script redeploy</div>
+    <button class="btn btn-secondary" onclick="saveWebhook()" style="margin-top:8px">Save URL</button>
+    <button class="btn btn-secondary" onclick="testWebhook()" style="margin-top:8px">Test Connection</button>
+    <div id="settings-status"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">📊 Data</div>
+    <button class="btn btn-secondary" onclick="loadTrades()">Refresh from Google Sheets</button>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">Trades live in the RAW_DATA tab of your Google Sheet. This app reads and writes there via the combined v14 Apps Script.</div>
+  </div>
+</div>
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG — new sheet's combined v14 Apps Script /exec URL
+// ═══════════════════════════════════════════════════════════
+const HARDCODED_WEBHOOK = 'https://script.google.com/macros/s/AKfycbzS-ZzmpyXSc2gb_V8ytYM0TgAR2unmCFxDJ2D5xRa6prIu0_ARqo2fw7tvKWshHLg/exec';
+const RISK_PER_TRADE = 14;   // v14 sizing fallback
+// ═══════════════════════════════════════════════════════════
+// COLUMN MAPPING — RAW_DATA v2 headers → journal fields
+// ═══════════════════════════════════════════════════════════
+function mapRow(raw) {
+  return {
+    id           : raw['Trade ID']         || '',
+    trade_num    : raw['Trade#']           || '',
+    date         : raw['Date']             || '',
+    ticker       : raw['Ticker']           || '',
+    sector       : raw['Sector']           || '',
+    edge_class   : raw['Sector Edge Class']|| '',
+    direction    : raw['Direction']        || 'BUY',
+    market_cap   : raw['Market Cap']       || '',
+    mcap_tier    : raw['Mcap Tier']        || '',
+    float_m      : raw['Float(M)']         || '',
+    vix          : raw['VIX']              || '',
+    vix_band     : raw['VIX Band']         || '',
+    atr          : raw['ATR']              || '',
+    grade        : raw['Grade']            || '',   // v14 A+/B
+    shares       : raw['Shares']           || 0,
+    entry        : raw['Entry']            || 0,
+    stop         : raw['Stop']             || 0,
+    target       : raw['Target']           || 0,
+    exit_price   : raw['Exit Price']       || '',
+    exit_date    : raw['Exit Date']        || '',
+    exit_reason  : raw['Exit Reason']      || '',
+    days_held    : raw['Days Held']        || '',
+    pnl_dollar   : raw['P&L$']             || '',
+    pnl_pct      : raw['P&L%']             || '',
+    r_multiple   : raw['R-Multiple']       || '',
+    slippage_r   : raw['Slippage R']       || '',
+    mae_r        : raw['MAE (R)']          || '',
+    mfe_r        : raw['MFE (R)']          || '',
+    reached_1r   : raw['Reached +1R']      || '',
+    adherence    : raw['Adherence Flag']   || '',
+    conviction   : raw['Conviction']       || '',
+    signal_grade : raw['Signal Grade']     || '',
+    score        : raw['Score/10']         || '',
+    notes        : raw['Notes']            || '',
+    is_open      : !raw['Exit Price'] || raw['Exit Price'] === '' || raw['Exit Price'] === 0,
+  };
+}
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let allTrades = [], currentFilter = 'all', parsedEntry = null, parsedExit = null;
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('webhook-url').value = getWebhook();
+  document.getElementById('exit-trade-select').innerHTML = '<option value="">⏳ Loading trades...</option>';
+  loadTrades();
+});
+function getWebhook() { return localStorage.getItem('swingbot_webhook') || HARDCODED_WEBHOOK; }
+function saveWebhook() {
+  const url = document.getElementById('webhook-url').value.trim();
+  if (!url) return;
+  localStorage.setItem('swingbot_webhook', url);
+  showStatus('settings-status', 'Webhook URL saved ✓', 'success');
+}
+async function testWebhook() {
+  showStatus('settings-status', 'Testing connection...', 'loading');
+  try {
+    const r = await fetch(getWebhook());
+    const d = await r.json();
+    const ok = d.status === 'ok' || d.message;
+    showStatus('settings-status', ok ? 'Connected ✓ — ' + (d.message || 'online') : 'Unexpected response', ok ? 'success' : 'error');
+  } catch(e) { showStatus('settings-status', 'Connection failed: ' + e.message, 'error'); }
+}
+// ═══════════════════════════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('nav-' + tab).classList.add('active');
+  if (tab === 'stats') renderStats();
+}
+// ═══════════════════════════════════════════════════════════
+// LOAD
+// ═══════════════════════════════════════════════════════════
+async function loadTrades() {
+  document.getElementById('trades-count').textContent = 'Loading...';
+  try {
+    const r = await fetch(getWebhook() + '?action=read');
+    const d = await r.json();
+    if (d.status !== 'ok') throw new Error(d.message || 'Read failed');
+    allTrades = (d.trades || []).map(mapRow);
+    renderTrades(currentFilter);
+    updateHeader();
+    populateExitSelect();
+    if (document.getElementById('tab-stats').classList.contains('active')) renderStats();
+  } catch(e) {
+    document.getElementById('trades-count').textContent = 'Error loading trades';
+    document.getElementById('trades-list').innerHTML = `<div class="status error">Failed to load: ${e.message}</div>`;
+  }
+}
+// ═══════════════════════════════════════════════════════════
+// R HELPERS
+// ═══════════════════════════════════════════════════════════
+function tradeR(t) {
+  const r = Number(t.r_multiple);
+  if (t.r_multiple !== '' && isFinite(r)) return r;
+  const atr = Number(t.atr), entry = Number(t.entry), ex = Number(t.exit_price);
+  if (atr > 0 && t.exit_price !== '' && isFinite(ex)) return (ex - entry) / atr;
+  return null;
+}
+// ═══════════════════════════════════════════════════════════
+// RENDER TRADES
+// ═══════════════════════════════════════════════════════════
+function filterTrades(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTrades(filter);
+}
+function gradeClass(g) {
+  const k = (g || '').toLowerCase();
+  if (k === 'a+') return 'tag-grade-aplus';
+  if (k === 'a')  return 'tag-grade-a';
+  if (k === 'b')  return 'tag-grade-b';
+  return 'tag-sector';
+}
+function renderTrades(filter) {
+  let trades = [...allTrades].reverse();
+  if (filter === 'open')   trades = trades.filter(t => t.is_open);
+  if (filter === 'closed') trades = trades.filter(t => !t.is_open);
+  if (filter === 'win')    trades = trades.filter(t => !t.is_open && Number(t.pnl_dollar) > 0);
+  if (filter === 'loss')   trades = trades.filter(t => !t.is_open && Number(t.pnl_dollar) < 0);
+  document.getElementById('trades-count').textContent = `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
+  if (trades.length === 0) {
+    document.getElementById('trades-list').innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No trades found</div></div>`;
+    return;
+  }
+  document.getElementById('trades-list').innerHTML = trades.map(t => {
+    const isOpen = t.is_open, pnlNum = Number(t.pnl_dollar), isWin = !isOpen && pnlNum > 0;
+    const cardCls = isOpen ? 'open' : (isWin ? 'closed win' : 'closed loss');
+    const pnlStr = !isOpen && t.pnl_dollar !== ''
+      ? `<span class="${pnlNum >= 0 ? 'pos' : 'neg'}">${pnlNum >= 0 ? '+' : ''}$${pnlNum.toFixed(2)}</span>`
+      : `<span class="tag tag-open">OPEN</span>`;
+    const rv = tradeR(t);
+    const rStr = (!isOpen && rv !== null) ? `${rv > 0 ? '+' : ''}${rv.toFixed(2)}R` : '';
+    const path = (!isOpen && (t.mae_r !== '' || t.mfe_r !== ''))
+      ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)">MAE ${t.mae_r||'—'}R · MFE ${t.mfe_r||'—'}R${t.reached_1r?` · +1R ${t.reached_1r}`:''}${t.slippage_r!==''?` · slip ${t.slippage_r}R`:''}</div>` : '';
+    return `
+    <div class="trade-card ${cardCls}">
+      <div class="trade-header">
+        <div>
+          <div class="trade-ticker">${t.ticker}</div>
+          <div class="trade-meta">
+            ${isOpen ? '<span class="tag tag-open">OPEN</span>' : ''}
+            ${t.grade ? `<span class="tag ${gradeClass(t.grade)}">${t.grade}</span>` : ''}
+            ${t.mcap_tier ? `<span class="tag tag-band">${t.mcap_tier}</span>` : ''}
+            ${t.sector ? `<span class="tag tag-sector">${t.sector}</span>` : ''}
+            ${t.date ? `<span class="tag tag-date">${t.date}</span>` : ''}
+          </div>
+        </div>
+        <div class="trade-pnl">
+          ${pnlStr}
+          ${rStr ? `<div style="font-size:11px;color:var(--muted);text-align:right;margin-top:2px">${rStr}</div>` : ''}
+        </div>
+      </div>
+      <div class="trade-levels">
+        <div class="level-item"><div class="level-label">Entry</div><div class="level-val">$${Number(t.entry).toFixed(2)}</div></div>
+        <div class="level-item"><div class="level-label">Stop</div><div class="level-val" style="color:var(--red)">$${Number(t.stop||0).toFixed(2)}</div></div>
+        <div class="level-item"><div class="level-label">Target</div><div class="level-val" style="color:var(--green)">$${Number(t.target||0).toFixed(2)}</div></div>
+      </div>
+      ${t.atr ? `<div style="margin-top:8px;font-size:11px;color:var(--muted)">ATR $${t.atr} · MktCap $${t.market_cap||'—'}M · VIX ${t.vix}${t.conviction?` · Conv ${t.conviction}`:''}</div>` : ''}
+      ${path}
+      ${isOpen ? `<button class="exit-btn" onclick="quickExit('${t.id}','${t.ticker}')">Log Exit →</button>` : ''}
+    </div>`;
+  }).join('');
+}
+function quickExit(id) {
+  switchTab('log');
+  setTimeout(() => {
+    const sel = document.getElementById('exit-trade-select');
+    sel.value = id;
+    document.getElementById('exit-json').focus();
+  }, 100);
+}
+function populateExitSelect() {
+  const open = allTrades.filter(t => t.is_open);
+  const sel  = document.getElementById('exit-trade-select');
+  sel.innerHTML = open.length === 0
+    ? '<option value="">— No open trades —</option>'
+    : '<option value="">— Select trade to exit —</option>' +
+      open.map(t => `<option value="${t.id}">${t.ticker} @ $${Number(t.entry).toFixed(2)} (${t.date})</option>`).join('');
+}
+// ═══════════════════════════════════════════════════════════
+// HEADER + STATS
+// ═══════════════════════════════════════════════════════════
+function updateHeader() {
+  const closed = allTrades.filter(t => !t.is_open && t.pnl_dollar !== '');
+  const open   = allTrades.filter(t => t.is_open);
+  const totalPnl = closed.reduce((s,t) => s + Number(t.pnl_dollar), 0);
+  const rs = closed.map(tradeR).filter(v => v !== null);
+  const expR = rs.length ? rs.reduce((s,v) => s+v, 0)/rs.length : null;
+  const pEl = document.getElementById('h-pnl');
+  pEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+  pEl.className = 'hstat-val ' + (totalPnl >= 0 ? 'pos' : 'neg');
+  const eEl = document.getElementById('h-exp');
+  eEl.textContent = expR !== null ? `${expR >= 0 ? '+' : ''}${expR.toFixed(2)}R` : '—';
+  eEl.className = 'hstat-val ' + (expR === null ? 'neu' : (expR >= 0 ? 'pos' : 'neg'));
+  document.getElementById('h-open').textContent = open.length;
+}
+function renderStats() {
+  const closed = allTrades.filter(t => !t.is_open && t.pnl_dollar !== '');
+  const wins   = closed.filter(t => Number(t.pnl_dollar) > 0);
+  const losses = closed.filter(t => Number(t.pnl_dollar) < 0);
+  const totalPnl = closed.reduce((s,t) => s + Number(t.pnl_dollar), 0);
+  const wr      = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+  const avgWin  = wins.length ? wins.reduce((s,t)=>s+Number(t.pnl_dollar),0)/wins.length : 0;
+  const avgLoss = losses.length ? losses.reduce((s,t)=>s+Number(t.pnl_dollar),0)/losses.length : 0;
+  const expD    = closed.length ? totalPnl / closed.length : 0;   // Expectancy ($) = mean P&L per trade
+  const rs      = closed.map(tradeR).filter(v => v !== null);
+  const expR    = rs.length ? rs.reduce((s,v)=>s+v,0)/rs.length : null;  // Expectancy (R) = mean R
+  const col = v => v >= 0 ? 'pos' : 'neg';
+
+  const pnlEl = document.getElementById('s-pnl');
+  pnlEl.textContent = `${totalPnl >= 0 ? '+' : '-'}$${Math.abs(totalPnl).toFixed(2)}`;
+  pnlEl.className = 'stat-val ' + col(totalPnl);
+  document.getElementById('s-wr').textContent = closed.length ? `${wr}%` : '—';
+
+  const eR = document.getElementById('s-expR');
+  eR.textContent = expR !== null ? `${expR >= 0 ? '+' : ''}${expR.toFixed(2)}R` : '—';
+  eR.className = 'stat-val ' + (expR === null ? 'neu' : col(expR));
+  const eD = document.getElementById('s-expD');
+  eD.textContent = closed.length ? `${expD >= 0 ? '+' : '-'}$${Math.abs(expD).toFixed(2)}` : '—';
+  eD.className = 'stat-val ' + col(expD);
+
+  document.getElementById('s-avgwin').textContent  = wins.length ? `+$${avgWin.toFixed(2)}` : '—';
+  document.getElementById('s-avgloss').textContent = losses.length ? `-$${Math.abs(avgLoss).toFixed(2)}` : '—';
+  const aR = document.getElementById('s-avgR');
+  aR.textContent = expR !== null ? `${expR >= 0 ? '+' : ''}${expR.toFixed(2)}R` : '—';
+  aR.className = 'stat-val ' + (expR === null ? 'neu' : col(expR));
+  document.getElementById('s-trades').textContent = allTrades.length;
+
+  const pct = Math.min(100, Math.round(allTrades.length / 100 * 100));
+  document.getElementById('s-progress-text').textContent = `${allTrades.length} / 100 trades`;
+  document.getElementById('s-progress-pct').textContent  = `${pct}%`;
+  document.getElementById('s-progress-bar').style.width  = pct + '%';
+
+  renderBreakdown('s-by-grade',  closed, 'grade');
+  renderBreakdown('s-by-tier',   closed, 'mcap_tier');
+  renderBreakdown('s-by-sector', closed, 'sector');
+  renderBreakdown('s-by-exit',   closed, 'exit_reason');
+}
+function renderBreakdown(elId, trades, field) {
+  const el = document.getElementById(elId);
+  if (!trades.length) { el.innerHTML = '<div class="empty"><div class="empty-text">No closed trades yet</div></div>'; return; }
+  const groups = {};
+  trades.forEach(t => {
+    const key = t[field] || 'Unknown';
+    if (!groups[key]) groups[key] = { pnl: 0, count: 0, wins: 0, rSum: 0, rN: 0 };
+    groups[key].pnl   += Number(t.pnl_dollar);
+    groups[key].count += 1;
+    if (Number(t.pnl_dollar) > 0) groups[key].wins += 1;
+    const rv = tradeR(t);
+    if (rv !== null) { groups[key].rSum += rv; groups[key].rN += 1; }
+  });
+  el.innerHTML = Object.entries(groups).sort((a,b) => b[1].pnl - a[1].pnl).map(([key, g]) => {
+    const wrp = g.count > 0 ? Math.round(g.wins/g.count*100) : 0;
+    const eR  = g.rN > 0 ? (g.rSum/g.rN) : null;
+    const rTxt = eR !== null ? `${eR >= 0 ? '+' : ''}${eR.toFixed(2)}R exp` : '';
+    return `
+    <div class="breakdown-row">
+      <div><div class="breakdown-label">${key}</div><div style="font-size:11px;color:var(--muted)">${g.count} trades · ${wrp}% WR${rTxt ? ' · ' + rTxt : ''}</div></div>
+      <div class="breakdown-val ${g.pnl >= 0 ? 'pos' : 'neg'}">${g.pnl >= 0 ? '+' : ''}$${g.pnl.toFixed(2)}</div>
+    </div>`;
+  }).join('');
+}
+// ═══════════════════════════════════════════════════════════
+// ENTRY FLOW — auto-fill everything the JSON already has
+// ═══════════════════════════════════════════════════════════
+function setFromJson(selectId, srcId, value) {
+  const sel = document.getElementById(selectId), src = document.getElementById(srcId);
+  if (value !== undefined && value !== null && value !== '') {
+    sel.value = String(value);
+    if (src) src.textContent = '(from JSON)';
+  } else if (src) { src.textContent = ''; }
+}
+function parseEntry() {
+  const raw = document.getElementById('entry-json').value.trim();
+  if (!raw) return;
+  try {
+    const d = JSON.parse(raw);
+    parsedEntry = d;
+    const entry  = d.fill_price ?? d.entry ?? d.entry_price ?? 0;
+    const atr    = d.atr || 0;
+    const stop   = d.stop ?? (entry - atr);
+    const target = d.target ?? (entry + 2*atr);
+    const shares = d.shares || (atr > 0 ? Math.max(1, Math.round(RISK_PER_TRADE / atr)) : 1);
+    document.getElementById('entry-fields').innerHTML = [
+      ['Ticker',   d.ticker || '—'],
+      ['Date',     d.date || new Date().toISOString().split('T')[0]],
+      ['Grade',    d.grade || '—'],
+      ['Mcap Tier',d.mcap_tier || '—'],
+      ['Entry',    '$' + Number(entry).toFixed(2)],
+      ['Stop',     '$' + Number(stop).toFixed(2)],
+      ['Target',   '$' + Number(target).toFixed(2)],
+      ['Shares',   shares],
+      ['ATR',      '$' + Number(atr).toFixed(3)],
+      ['Mkt Cap',  d.market_cap ? '$'+d.market_cap+'M' : '—'],
+      ['VIX',      d.vix ?? '—'],
+      ['10Q',      (d.signal_grade || '—') + ' ' + (d.score ?? '') + (d.score!=null?'/10':'')],
+    ].map(([l,v]) => `<div class="preview-item"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+    setFromJson('entry-sector','entry-sector-src', d.sector);
+    setFromJson('entry-grade','entry-grade-src', d.grade);
+    setFromJson('entry-conviction','entry-conv-src', d.conviction);
+    document.getElementById('entry-preview').classList.remove('hidden');
+  } catch(e) { showStatus('entry-status', 'Invalid JSON: ' + e.message, 'error'); }
+}
+async function submitEntry() {
+  if (!parsedEntry) return;
+  const d = parsedEntry;
+  const sector = document.getElementById('entry-sector').value || d.sector || '';
+  const grade  = document.getElementById('entry-grade').value  || d.grade  || '';
+  const conv   = document.getElementById('entry-conviction').value || d.conviction || '';
+  const notes  = document.getElementById('entry-notes').value;
+  if (!sector) { showStatus('entry-status', 'Sector missing from JSON — pick one', 'error'); return; }
+  if (!grade)  { showStatus('entry-status', 'Grade missing from JSON — pick one', 'error'); return; }
+  const entry = d.fill_price ?? d.entry ?? d.entry_price ?? 0;
+  const atr   = d.atr || 0;
+  const edge  = d.sector_edge_class || ((['Consumer Discretionary','Real Estate'].includes(sector)) ? 'provisional' : 'clean');
+  const vixBand = d.vix_band || (Number(d.vix) <= 20 ? 'green' : 'caution');
+  const payload = {
+    trade_id: d.trade_id || '',
+    ticker: d.ticker, date: d.date || new Date().toISOString().split('T')[0],
+    direction: d.direction || 'BUY',
+    sector, sector_edge_class: edge, grade,
+    market_cap: d.market_cap, mcap_tier: d.mcap_tier,
+    float_m: d.float_m, vix: d.vix, vix_band: vixBand, atr,
+    shares: d.shares || (atr > 0 ? Math.max(1, Math.round(RISK_PER_TRADE/atr)) : 1),
+    fill_price: entry, stop: d.stop ?? (entry - atr), target: d.target ?? (entry + 2*atr),
+    conviction: conv, signal_grade: d.signal_grade, score: d.score, scores: d.scores || [],
+    notes,
+  };
+  showStatus('entry-status', 'Saving...', 'loading');
+  const ok = await sendToSheet(payload, 'entry');
+  if (ok) {
+    showStatus('entry-status', `${d.ticker} entry saved ✓`, 'success');
+    document.getElementById('entry-json').value = '';
+    document.getElementById('entry-preview').classList.add('hidden');
+    parsedEntry = null;
+    await loadTrades();
+  } else { showStatus('entry-status', 'Save failed — check webhook in Settings', 'error'); }
+}
+// ═══════════════════════════════════════════════════════════
+// EXIT FLOW — auto-match trade + auto-fill from JSON
+// ═══════════════════════════════════════════════════════════
+function parseExit() {
+  const raw = document.getElementById('exit-json').value.trim();
+  if (!raw) return;
+  try {
+    const d = JSON.parse(raw);
+    parsedExit = d;
+    // auto-match the open trade by trade_id, then by ticker
+    const sel = document.getElementById('exit-trade-select');
+    const matchSrc = document.getElementById('exit-match-src');
+    const wantId = d.trade_id || d.id;
+    let matched = null;
+    if (wantId && allTrades.some(t => t.id === wantId && t.is_open)) matched = wantId;
+    else if (d.ticker) { const m = allTrades.find(t => t.is_open && t.ticker === d.ticker); if (m) matched = m.id; }
+    if (matched) { sel.value = matched; matchSrc.textContent = '(auto-matched)'; } else { matchSrc.textContent = ''; }
+
+    const exitPrice = d.exit_price ?? d.fill_price ?? 0;
+    const trade = allTrades.find(t => t.id === sel.value);
+    let pnl = '—', rEst = '—';
+    if (trade && exitPrice) {
+      const p = (exitPrice - Number(trade.entry)) * Number(trade.shares);
+      pnl = `${p >= 0 ? '+' : ''}$${p.toFixed(2)}`;
+      const atr = Number(trade.atr);
+      if (atr > 0) { const r = (exitPrice - Number(trade.entry))/atr; rEst = `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`; }
+    }
+    document.getElementById('exit-fields').innerHTML = [
+      ['Ticker',     d.ticker || (trade ? trade.ticker : '—')],
+      ['Exit Price', '$' + Number(exitPrice).toFixed(2)],
+      ['Exit Date',  d.exit_date || d.date || new Date().toISOString().split('T')[0]],
+      ['Est P&L',    pnl],
+      ['Est R',      rEst],
+      ['Slippage',   (d.slippage_r!=null?d.slippage_r+'R':'—')],
+    ].map(([l,v]) => `<div class="preview-item"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+    setFromJson('exit-reason','exit-reason-src', d.exit_reason);
+    setFromJson('exit-adherence','exit-adh-src', d.adherence_flag);
+    document.getElementById('exit-preview').classList.remove('hidden');
+  } catch(e) { showStatus('exit-status', 'Invalid JSON: ' + e.message, 'error'); }
+}
+async function submitExit() {
+  if (!parsedExit) return;
+  const d = parsedExit;
+  const tradeId   = document.getElementById('exit-trade-select').value;
+  const reason    = document.getElementById('exit-reason').value || d.exit_reason || '';
+  const adherence = document.getElementById('exit-adherence').value || d.adherence_flag || '';
+  const notes     = document.getElementById('exit-notes').value;
+  if (!tradeId) { showStatus('exit-status', 'No trade matched — pick the open trade', 'error'); return; }
+  if (!reason)  { showStatus('exit-status', 'Exit reason missing from JSON — pick one', 'error'); return; }
+  const trade = allTrades.find(t => t.id === tradeId);
+  const exitPrice = d.exit_price ?? d.fill_price ?? 0;
+  const payload = {
+    id: tradeId, trade_id: tradeId,
+    ticker: trade ? trade.ticker : d.ticker, direction: 'SELL',
+    exit_date: d.exit_date || d.date || new Date().toISOString().split('T')[0],
+    fill_price: exitPrice, exit_price: exitPrice,
+    exit_reason: reason, adherence_flag: adherence,
+    slippage_usd: d.slippage_usd, slippage_r: d.slippage_r,
+    notes,
+  };
+  showStatus('exit-status', 'Saving...', 'loading');
+  const ok = await sendToSheet(payload, 'exit');
+  if (ok) {
+    showStatus('exit-status', `${payload.ticker} exit saved ✓`, 'success');
+    document.getElementById('exit-json').value = '';
+    document.getElementById('exit-preview').classList.add('hidden');
+    parsedExit = null;
+    await loadTrades();
+  } else { showStatus('exit-status', 'Save failed — check webhook in Settings', 'error'); }
+}
+// ═══════════════════════════════════════════════════════════
+// SEND
+// ═══════════════════════════════════════════════════════════
+async function sendToSheet(payload, action) {
+  try {
+    const url = getWebhook() + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(payload));
+    const r = await fetch(url);
+    const d = await r.json();
+    return d.status === 'ok';
+  } catch(e) { console.error('Sheet error:', e); return false; }
+}
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+function showEntryConfirm() {
+  if (!parsedEntry) { showStatus('entry-status', 'Parse JSON first', 'error'); return; }
+  document.getElementById('entry-confirm').classList.remove('hidden');
+  document.getElementById('entry-confirm-btn').classList.add('hidden');
+}
+function showExitConfirm() {
+  if (!parsedExit) { showStatus('exit-status', 'Parse JSON first', 'error'); return; }
+  document.getElementById('exit-confirm').classList.remove('hidden');
+  document.getElementById('exit-confirm-btn').classList.add('hidden');
+}
+function showStatus(elId, msg, type) {
+  const el = document.getElementById(elId);
+  el.innerHTML = `<div class="status ${type}">${msg}</div>`;
+  if (type === 'success') setTimeout(() => el.innerHTML = '', 4000);
+  if (elId === 'entry-status' && type !== 'loading') {
+    document.getElementById('entry-confirm')?.classList.add('hidden');
+    document.getElementById('entry-confirm-btn')?.classList.remove('hidden');
+  }
+  if (elId === 'exit-status' && type !== 'loading') {
+    document.getElementById('exit-confirm')?.classList.add('hidden');
+    document.getElementById('exit-confirm-btn')?.classList.remove('hidden');
+  }
+}
+</script>
+</body>
+</html>
