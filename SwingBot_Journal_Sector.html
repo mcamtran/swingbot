@@ -131,7 +131,7 @@
   <div class="card">
     <div class="card-title">📥 Log Entry</div>
     <div class="field-label">Paste entry JSON from Claude</div>
-    <textarea id="entry-json" placeholder='{"trade_id":"SWBI_012","ticker":"SWBI","sector":"Financials","grade":"A+","mcap_tier":"deep","market_cap":6200,"atr":0.40,"shares":35,"fill_price":15.22,"stop":14.82,"target":16.02,"conviction":3,...}'></textarea>
+    <textarea id="entry-json" placeholder='{"type":"entry","trade_id":"SWBI_012","ticker":"SWBI","sector":"Financials","grade":"A+","mcap_tier":"deep","market_cap":6200,"atr":0.40,"shares":35,"entry":15.22,"stop":14.82,"target":16.02,"conviction":3,...}'></textarea>
     <button class="btn btn-secondary" onclick="parseEntry()" style="margin-top:8px">Parse Entry</button>
     <div id="entry-preview" class="hidden">
       <div class="divider"></div>
@@ -182,7 +182,7 @@
       <select id="exit-trade-select"><option value="">⏳ Loading trades...</option></select></div>
     </div>
     <div class="field-label">Paste exit JSON from Claude</div>
-    <textarea id="exit-json" placeholder='{"trade_id":"SWBI_012","exit_price":16.09,"exit_date":"2026-07-18","exit_reason":"Target Hit","slippage_usd":-0.02,"slippage_r":-0.05,"adherence_flag":"clean"}'></textarea>
+    <textarea id="exit-json" placeholder='{"type":"exit","trade_id":"SWBI_012","exit_price":16.09,"exit_date":"2026-07-18","exit_reason":"Target","adherence":"clean"}'></textarea>
     <button class="btn btn-secondary" onclick="parseExit()" style="margin-top:8px">Parse Exit</button>
     <div id="exit-preview" class="hidden">
       <div class="divider"></div>
@@ -344,10 +344,10 @@ function saveWebhook() {
 async function testWebhook() {
   showStatus('settings-status', 'Testing connection...', 'loading');
   try {
-    const r = await fetch(getWebhook());
+    const r = await fetch(getWebhook() + '?action=read');
     const d = await r.json();
-    const ok = d.status === 'ok' || d.message;
-    showStatus('settings-status', ok ? 'Connected ✓ — ' + (d.message || 'online') : 'Unexpected response', ok ? 'success' : 'error');
+    const ok = d.ok === true;
+    showStatus('settings-status', ok ? 'Connected ✓ — ' + d.count + ' rows in RAW_DATA' : 'Unexpected response', ok ? 'success' : 'error');
   } catch(e) { showStatus('settings-status', 'Connection failed: ' + e.message, 'error'); }
 }
 // ═══════════════════════════════════════════════════════════
@@ -368,8 +368,8 @@ async function loadTrades() {
   try {
     const r = await fetch(getWebhook() + '?action=read');
     const d = await r.json();
-    if (d.status !== 'ok') throw new Error(d.message || 'Read failed');
-    allTrades = (d.trades || []).map(mapRow);
+    if (!d.ok) throw new Error(d.error || 'Read failed');
+    allTrades = (d.rows || []).map(mapRow);
     renderTrades(currentFilter);
     updateHeader();
     populateExitSelect();
@@ -592,6 +592,7 @@ function parseEntry() {
     setFromJson('entry-sector','entry-sector-src', d.sector);
     setFromJson('entry-grade','entry-grade-src', d.grade);
     setFromJson('entry-conviction','entry-conv-src', d.conviction);
+    if (d.notes) document.getElementById('entry-notes').value = d.notes;
     document.getElementById('entry-preview').classList.remove('hidden');
   } catch(e) { showStatus('entry-status', 'Invalid JSON: ' + e.message, 'error'); }
 }
@@ -601,7 +602,7 @@ async function submitEntry() {
   const sector = document.getElementById('entry-sector').value || d.sector || '';
   const grade  = document.getElementById('entry-grade').value  || d.grade  || '';
   const conv   = document.getElementById('entry-conviction').value || d.conviction || '';
-  const notes  = document.getElementById('entry-notes').value;
+  const notes  = document.getElementById('entry-notes').value || d.notes || '';
   if (!sector) { showStatus('entry-status', 'Sector missing from JSON — pick one', 'error'); return; }
   if (!grade)  { showStatus('entry-status', 'Grade missing from JSON — pick one', 'error'); return; }
   const entry = d.fill_price ?? d.entry ?? d.entry_price ?? 0;
@@ -616,7 +617,7 @@ async function submitEntry() {
     market_cap: d.market_cap, mcap_tier: d.mcap_tier,
     float_m: d.float_m, vix: d.vix, vix_band: vixBand, atr,
     shares: d.shares || (atr > 0 ? Math.max(1, Math.round(RISK_PER_TRADE/atr)) : 1),
-    fill_price: entry, stop: d.stop ?? (entry - atr), target: d.target ?? (entry + 2*atr),
+    entry: entry, stop: d.stop ?? (entry - atr), target: d.target ?? (entry + 2*atr),
     conviction: conv, signal_grade: d.signal_grade, score: d.score, scores: d.scores || [],
     notes,
   };
@@ -667,6 +668,7 @@ function parseExit() {
     ].map(([l,v]) => `<div class="preview-item"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
     setFromJson('exit-reason','exit-reason-src', d.exit_reason);
     setFromJson('exit-adherence','exit-adh-src', d.adherence_flag);
+    if (d.notes) document.getElementById('exit-notes').value = d.notes;
     document.getElementById('exit-preview').classList.remove('hidden');
   } catch(e) { showStatus('exit-status', 'Invalid JSON: ' + e.message, 'error'); }
 }
@@ -676,7 +678,7 @@ async function submitExit() {
   const tradeId   = document.getElementById('exit-trade-select').value;
   const reason    = document.getElementById('exit-reason').value || d.exit_reason || '';
   const adherence = document.getElementById('exit-adherence').value || d.adherence_flag || '';
-  const notes     = document.getElementById('exit-notes').value;
+  const notes     = document.getElementById('exit-notes').value || d.notes || '';
   if (!tradeId) { showStatus('exit-status', 'No trade matched — pick the open trade', 'error'); return; }
   if (!reason)  { showStatus('exit-status', 'Exit reason missing from JSON — pick one', 'error'); return; }
   const trade = allTrades.find(t => t.id === tradeId);
@@ -686,7 +688,7 @@ async function submitExit() {
     ticker: trade ? trade.ticker : d.ticker, direction: 'SELL',
     exit_date: d.exit_date || d.date || new Date().toISOString().split('T')[0],
     fill_price: exitPrice, exit_price: exitPrice,
-    exit_reason: reason, adherence_flag: adherence,
+    exit_reason: reason, adherence: adherence,
     slippage_usd: d.slippage_usd, slippage_r: d.slippage_r,
     notes,
   };
@@ -708,7 +710,7 @@ async function sendToSheet(payload, action) {
     const url = getWebhook() + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(payload));
     const r = await fetch(url);
     const d = await r.json();
-    return d.status === 'ok';
+    return d.ok === true;
   } catch(e) { console.error('Sheet error:', e); return false; }
 }
 // ═══════════════════════════════════════════════════════════
