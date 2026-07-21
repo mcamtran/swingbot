@@ -191,10 +191,19 @@
         <div>
           <div class="field-label">Exit Reason <span class="from-json" id="exit-reason-src"></span></div>
           <select id="exit-reason">
+            <!-- B3 FIX 2026-07-20 - every option now carries an explicit CANONICAL value.
+                 canonExitReason_() in the .gs returns the RAW string on no match (it does not
+                 throw), so "EMA Exit" / "8-Day Timeout" / "Earnings Risk" previously wrote an
+                 out-of-domain Exit Reason AND blanked the adherence lookup, silently.
+                 Domain is {Target, Stop, Timeout, Manual}; labels stay human-readable. -->
             <option value="">— Reason —</option>
-            <option>Target Hit</option><option>Stop Hit</option><option>EMA Exit</option>
-            <option>Manual — Profit</option><option>Manual — Dead Trade</option>
-            <option>8-Day Timeout</option><option>Earnings Risk</option>
+            <option value="Target">Target Hit</option>
+            <option value="Stop">Stop Hit</option>
+            <option value="Timeout">8-Day Timeout</option>
+            <option value="Timeout">Manual — Dead Trade</option>
+            <option value="Manual">Manual — Profit</option>
+            <option value="Manual">EMA Exit</option>
+            <option value="Manual">Earnings Risk</option>
           </select>
         </div>
         <div>
@@ -618,7 +627,13 @@ async function submitEntry() {
     float_m: d.float_m, vix: d.vix, vix_band: vixBand, atr,
     shares: d.shares || (atr > 0 ? Math.max(1, Math.round(RISK_PER_TRADE/atr)) : 1),
     entry: entry, stop: d.stop ?? (entry - atr), target: d.target ?? (entry + 2*atr),
-    conviction: conv, signal_grade: d.signal_grade, score: d.score, scores: d.scores || [],
+    conviction: conv, signal_grade: d.signal_grade,
+    // M1 FIX 2026-07-20 - backend ENTRY_MAP reads `score_10`; Q1-Q10 read `q_scores`.
+    // Journal previously sent `score`/`scores`, so Score/10 + Q1-Q10 wrote BLANK on every
+    // entry. Accept either inbound spelling (skill-era or v14.1 contract); always emit
+    // the contract names the backend actually maps.
+    score_10: d.score_10 ?? d.score ?? '',
+    q_scores: d.q_scores || d.scores || [],
     notes,
   };
   showStatus('entry-status', 'Saving...', 'loading');
